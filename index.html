@@ -25,10 +25,6 @@
           <div id="login-error" class="alert alert-danger hidden">Invalid PIN. Please try again.</div>
           <button type="submit" class="btn btn-primary btn-block">Sign In</button>
         </form>
-        <div class="login-hint">
-          <span>Default Admin PIN: <code>1234</code></span>
-          <span>Cashier PIN: <code>5678</code></span>
-        </div>
       </div>
     </div>
 
@@ -516,6 +512,20 @@
             <span>Change</span>
             <span id="cash-change" class="change-amount">₱0.00</span>
           </div>
+        </div>
+        <div id="ewallet-wrap" class="ewallet-section hidden">
+          <label><span id="ewallet-method-label">GCash</span> Reference Number *</label>
+          <input type="text" id="ewallet-ref" class="input-full" placeholder="e.g. 12345678901" maxlength="20">
+          <p class="ewallet-hint">Ask the customer to show their payment confirmation screen. Enter the reference number above.</p>
+          <div class="ewallet-amount-display">
+            <span>Amount to receive:</span>
+            <strong id="ewallet-total-display"></strong>
+          </div>
+        </div>
+        <div id="card-wrap" class="card-section hidden">
+          <label>Card Last 4 Digits (optional)</label>
+          <input type="text" id="card-last4" class="input-full" placeholder="e.g. 1234" maxlength="4" inputmode="numeric">
+          <p class="ewallet-hint">Process the card payment on your terminal, then click Complete Sale.</p>
         </div>
         <div id="split-payment-wrap" class="split-payment hidden">
           <div class="split-row">

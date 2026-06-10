@@ -927,3 +927,153 @@ body.loading::after {
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.15); border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: rgba(0,0,0,0.25); }
+
+/* ============================
+   CART ITEM REDESIGN
+   ============================ */
+.cart-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 0.5px solid var(--border);
+  min-height: 64px;
+}
+.cart-item:last-child { border-bottom: none; }
+.cart-item:hover { background: var(--orange-bg); }
+.cart-item-num {
+  width: 22px; height: 22px;
+  background: var(--bg);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.7rem; font-weight: 700;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+.cart-item-info { flex: 1; min-width: 0; }
+.cart-item-name { font-size: 0.9rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cart-item-price { font-size: 0.82rem; color: var(--text-secondary); margin-top: 2px; }
+.cart-item-controls { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.qty-btn {
+  width: 32px; height: 32px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 1.2rem; font-weight: 600;
+  color: var(--text);
+  transition: all 0.12s;
+  line-height: 1;
+}
+.qty-btn:hover { border-color: var(--orange); color: var(--orange); background: var(--orange-bg); }
+.qty-input {
+  width: 50px;
+  text-align: center;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  padding: 4px;
+  font-size: 1rem;
+  font-weight: 700;
+  outline: none;
+  background: var(--surface);
+  height: 32px;
+}
+.qty-input:focus { border-color: var(--orange); box-shadow: 0 0 0 3px rgba(232,101,10,0.12); }
+.cart-item-remove {
+  background: none; border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 5px;
+  border-radius: 6px;
+  line-height: 0;
+  transition: all 0.12s;
+  flex-shrink: 0;
+}
+.cart-item-remove:hover { color: var(--danger); background: var(--danger-bg); }
+
+/* ============================
+   STOCK ALERT BANNER
+   ============================ */
+.stock-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: #FFF3CD;
+  border-bottom: 1px solid #FBBF24;
+  color: #92400E;
+  padding: 0.6rem 1rem;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+.stock-alert-banner svg { flex-shrink: 0; color: #D97706; }
+.stock-alert-banner span { flex: 1; }
+.banner-goto-inventory {
+  background: #D97706; color: #fff;
+  border: none; border-radius: 6px;
+  padding: 4px 10px; font-size: 0.78rem; font-weight: 600;
+  cursor: pointer; white-space: nowrap;
+}
+.banner-goto-inventory:hover { background: #B45309; }
+.banner-dismiss {
+  background: none; border: none;
+  color: #92400E; cursor: pointer;
+  font-size: 1rem; padding: 2px 6px;
+  border-radius: 4px;
+  opacity: 0.6;
+}
+.banner-dismiss:hover { opacity: 1; }
+
+/* ============================
+   EWALLET / CARD PAYMENT FIELDS
+   ============================ */
+.ewallet-section, .card-section {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  background: var(--bg);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.ewallet-section label, .card-section label {
+  display: block;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.ewallet-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin-top: 6px;
+  line-height: 1.4;
+}
+.ewallet-amount-display {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  background: var(--info-bg);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+  color: var(--info);
+}
+.ewallet-amount-display strong { font-size: 1.2rem; }
+
+/* Low stock product card indicator */
+.product-card.low-stock-card {
+  border-color: #FBBF24;
+}
+.product-card.low-stock-card .product-stock.low::before {
+  content: '⚠ ';
+}
+.product-card.out-of-stock .product-stock.out::before {
+  content: '✕ ';
+}
+
+/* ============================
+   REPORTS VIEW SCROLL FIX
+   ============================ */
+#view-reports {
+  overflow-y: auto;
+}

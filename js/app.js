@@ -184,6 +184,7 @@ function enterPOS() {
   renderCartCustomers();
   loadCurrentView('pos');
   setTimeout(maintainSearchFocus, 100);
+  setTimeout(checkLowStockAlerts, 200);
 }
 
 function showScreen(id) {
@@ -269,9 +270,10 @@ function renderProductGrid() {
   grid.innerHTML = products.map(p => {
     const outOfStock = p.trackStock !== false && p.stock <= 0;
     const lowStock = p.trackStock !== false && p.stock > 0 && p.stock <= lowQty;
+    const extraClass = outOfStock ? 'out-of-stock' : lowStock ? 'low-stock-card' : '';
     const stockLabel = p.trackStock === false ? '' : `<span class="product-stock ${outOfStock ? 'out' : lowStock ? 'low' : ''}">${outOfStock ? 'Out of stock' : `${p.stock} ${p.unit || 'pcs'}`}</span>`;
     return `
-      <div class="product-card ${outOfStock ? 'out-of-stock' : ''}" data-id="${p.id}">
+      <div class="product-card ${extraClass}" data-id="${p.id}">
         <div class="product-name">${escHtml(p.name)}</div>
         <div class="product-price">${fmt(p.price)}</div>
         ${stockLabel}
@@ -361,20 +363,21 @@ function renderCart() {
       <p>Cart is empty</p><span>Tap a product to add it</span></div>`;
     document.getElementById('btn-checkout').disabled = true;
   } else {
-    el.innerHTML = App.cart.map(item => `
+    el.innerHTML = App.cart.map((item, idx) => `
       <div class="cart-item">
+        <div class="cart-item-num">${idx + 1}</div>
         <div class="cart-item-info">
           <div class="cart-item-name" title="${escHtml(item.name)}">${escHtml(item.name)}</div>
-          <div class="cart-item-price">${fmt(item.price)} each</div>
+          <div class="cart-item-price">${fmt(item.price)} × ${item.qty} = <strong>${fmt(item.price * item.qty)}</strong></div>
         </div>
         <div class="cart-item-controls">
           <button class="qty-btn" data-action="dec" data-id="${item.productId}">−</button>
-          <input class="qty-input" type="number" value="${item.qty}" min="1" data-id="${item.productId}">
+          <input class="qty-input" type="number" value="${item.qty}" min="1" data-id="${item.productId}"
+            onfocus="window._qtyFocused=true" onblur="window._qtyFocused=false">
           <button class="qty-btn" data-action="inc" data-id="${item.productId}">+</button>
         </div>
-        <span class="cart-item-total">${fmt(item.price * item.qty)}</span>
         <button class="cart-item-remove" data-id="${item.productId}" title="Remove">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
       </div>`).join('');
 
@@ -388,7 +391,14 @@ function renderCart() {
       });
     });
     el.querySelectorAll('.qty-input').forEach(input => {
+      // When user focuses a qty input, disable the auto-refocus-to-search behaviour
+      input.addEventListener('focus', () => { window._qtyFocused = true; });
+      input.addEventListener('blur', () => { window._qtyFocused = false; });
       input.addEventListener('change', () => updateCartQty(input.dataset.id, input.value));
+      // Prevent Enter inside qty input from triggering barcode scan
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') { e.stopPropagation(); e.preventDefault(); input.blur(); }
+      });
     });
     el.querySelectorAll('.cart-item-remove').forEach(btn => {
       btn.addEventListener('click', () => removeFromCart(btn.dataset.id));
@@ -533,10 +543,15 @@ function openCheckout() {
   document.getElementById('cash-tendered').value = '';
   document.getElementById('cash-change').textContent = fmt(0);
   document.getElementById('checkout-note').value = '';
-  // Reset payment method
+  document.getElementById('ewallet-ref').value = '';
+  document.getElementById('card-last4').value = '';
+  document.getElementById('ewallet-total-display').textContent = fmt(total);
+  // Reset payment method to cash
   document.querySelectorAll('.pay-method').forEach(b => b.classList.remove('active'));
   document.querySelector('.pay-method[data-method="cash"]').classList.add('active');
   document.getElementById('cash-tendered-wrap').classList.remove('hidden');
+  document.getElementById('ewallet-wrap').classList.add('hidden');
+  document.getElementById('card-wrap').classList.add('hidden');
   document.getElementById('split-payment-wrap').classList.add('hidden');
   showModal('modal-checkout');
 }
@@ -547,7 +562,13 @@ document.querySelectorAll('.pay-method').forEach(btn => {
     btn.classList.add('active');
     const method = btn.dataset.method;
     document.getElementById('cash-tendered-wrap').classList.toggle('hidden', method !== 'cash');
+    document.getElementById('ewallet-wrap').classList.toggle('hidden', method !== 'gcash' && method !== 'maya');
+    document.getElementById('card-wrap').classList.toggle('hidden', method !== 'card');
     document.getElementById('split-payment-wrap').classList.toggle('hidden', method !== 'split');
+    // Update e-wallet label
+    if (method === 'gcash' || method === 'maya') {
+      document.getElementById('ewallet-method-label').textContent = method === 'gcash' ? 'GCash' : 'Maya';
+    }
   });
 });
 
@@ -581,6 +602,9 @@ async function completeSale() {
     const tendered = parseFloat(document.getElementById('cash-tendered').value) || 0;
     if (tendered < total) { toast('Insufficient cash tendered', 'error'); return; }
   }
+  if ((method === 'gcash' || method === 'maya') && !document.getElementById('ewallet-ref').value.trim()) {
+    toast(`Please enter the ${method === 'gcash' ? 'GCash' : 'Maya'} reference number`, 'error'); return;
+  }
 
   const orderId = OrangeCrypto.uid();
   const orderNum = OrangeCrypto.orderNum();
@@ -599,6 +623,8 @@ async function completeSale() {
     total,
     paymentMethod: method,
     cashTendered: method === 'cash' ? parseFloat(document.getElementById('cash-tendered').value) || 0 : total,
+    paymentRef: (method === 'gcash' || method === 'maya') ? document.getElementById('ewallet-ref').value.trim() : '',
+    cardLast4: method === 'card' ? document.getElementById('card-last4').value.trim() : '',
     note: document.getElementById('checkout-note').value,
     status: 'completed',
   };
@@ -659,6 +685,8 @@ function showReceipt(order) {
     <div class="receipt-divider"></div>
     <div class="receipt-row total"><span>TOTAL</span><span>${fmt(order.total)}</span></div>
     <div class="receipt-row"><span>Payment (${escHtml(order.paymentMethod.toUpperCase())})</span><span>${fmt(order.cashTendered)}</span></div>
+    ${order.paymentRef ? `<div class="receipt-row"><span>Ref #</span><span>${escHtml(order.paymentRef)}</span></div>` : ''}
+    ${order.cardLast4 ? `<div class="receipt-row"><span>Card</span><span>**** ${escHtml(order.cardLast4)}</span></div>` : ''}
     ${order.paymentMethod === 'cash' ? `<div class="receipt-row"><span>Change</span><span>${fmt(Math.max(0, change))}</span></div>` : ''}
     ${order.note ? `<div class="receipt-divider"></div><div style="font-size:0.78rem">Note: ${escHtml(order.note)}</div>` : ''}
     <div class="receipt-divider"></div>
@@ -1051,7 +1079,71 @@ function renderReports() {
 }
 
 document.getElementById('report-period').addEventListener('change', renderReports);
-document.getElementById('btn-print-report').addEventListener('click', () => window.print());
+document.getElementById('btn-print-report').addEventListener('click', printReport);
+
+function printReport() {
+  const period = document.getElementById('report-period').value;
+  const periodLabel = { today: 'Today', week: 'This Week', month: 'This Month', year: 'This Year' }[period] || period;
+  const settings = Store.getSettings();
+  const biz = settings.bizName || 'My Store';
+
+  // Collect all data shown in report
+  const revenue = document.getElementById('rpt-revenue').textContent;
+  const orders  = document.getElementById('rpt-orders').textContent;
+  const avg     = document.getElementById('rpt-avg').textContent;
+  const items   = document.getElementById('rpt-items').textContent;
+  const tax     = document.getElementById('rpt-tax').textContent;
+  const profit  = document.getElementById('rpt-profit').textContent;
+
+  // Top products rows
+  const topRows = [...document.querySelectorAll('#top-products-tbody tr')].map(r =>
+    `<tr>${[...r.cells].map(c => `<td>${c.innerHTML}</td>`).join('')}</tr>`
+  ).join('');
+
+  // Payment breakdown
+  const payRows = [...document.querySelectorAll('#payment-breakdown .pay-bar')].map(b =>
+    `<tr><td>${b.querySelector('.pay-bar-method').textContent}</td><td>${b.querySelector('.pay-bar-amount').textContent}</td></tr>`
+  ).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>${biz} — Sales Report (${periodLabel})</title>
+    <style>
+      body { font-family: sans-serif; font-size: 13px; color: #111; margin: 2cm; }
+      h1 { font-size: 18px; margin: 0 0 4px; }
+      .sub { color: #666; font-size: 12px; margin-bottom: 20px; }
+      .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 20px; }
+      .stat { border: 1px solid #ddd; border-radius: 6px; padding: 10px 14px; }
+      .stat-label { font-size: 10px; text-transform: uppercase; color: #888; letter-spacing: .04em; }
+      .stat-value { font-size: 20px; font-weight: 700; margin-top: 4px; }
+      h2 { font-size: 14px; margin: 20px 0 8px; border-bottom: 1px solid #eee; padding-bottom: 6px; }
+      table { width: 100%; border-collapse: collapse; font-size: 12px; }
+      th { text-align: left; padding: 6px 8px; background: #f5f5f5; border-bottom: 1px solid #ddd; font-size: 11px; text-transform: uppercase; }
+      td { padding: 6px 8px; border-bottom: 1px solid #f0f0f0; }
+      .footer { margin-top: 30px; font-size: 11px; color: #aaa; text-align: center; }
+    </style>
+  </head><body>
+    <h1>${escHtml(biz)} — Sales Report</h1>
+    <div class="sub">Period: ${escHtml(periodLabel)} &nbsp;·&nbsp; Printed: ${new Date().toLocaleString('en-PH')}</div>
+    <div class="stats">
+      <div class="stat"><div class="stat-label">Total Revenue</div><div class="stat-value">${revenue}</div></div>
+      <div class="stat"><div class="stat-label">Orders</div><div class="stat-value">${orders}</div></div>
+      <div class="stat"><div class="stat-label">Avg Order Value</div><div class="stat-value">${avg}</div></div>
+      <div class="stat"><div class="stat-label">Items Sold</div><div class="stat-value">${items}</div></div>
+      <div class="stat"><div class="stat-label">VAT Collected</div><div class="stat-value">${tax}</div></div>
+      <div class="stat"><div class="stat-label">Net Profit</div><div class="stat-value">${profit}</div></div>
+    </div>
+    <h2>Top Selling Products</h2>
+    <table><thead><tr><th>Product</th><th>Qty Sold</th><th>Revenue</th></tr></thead><tbody>${topRows || '<tr><td colspan="3" style="color:#aaa">No data</td></tr>'}</tbody></table>
+    <h2>Payment Methods Breakdown</h2>
+    <table><thead><tr><th>Method</th><th>Amount</th></tr></thead><tbody>${payRows || '<tr><td colspan="2" style="color:#aaa">No data</td></tr>'}</tbody></table>
+    <div class="footer">OrangePOS &nbsp;·&nbsp; ${escHtml(biz)}</div>
+    <script>window.onload = () => { window.print(); window.onafterprint = () => window.close(); }<\/script>
+  </body></html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=600');
+  if (win) { win.document.write(html); win.document.close(); }
+  else toast('Pop-up blocked. Allow pop-ups to print.', 'warning');
+}
 
 /* ============================
    ADMIN VIEW
@@ -1297,6 +1389,7 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 // and no modal is open. This lets USB barcode scanners work without clicking.
 function maintainSearchFocus() {
   if (App.currentView !== 'pos') return;
+  if (window._qtyFocused) return; // don't steal focus from qty inputs
   const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
   if (anyModalOpen) return;
   const searchEl = document.getElementById('product-search');
@@ -1383,6 +1476,7 @@ document.getElementById('product-search').addEventListener('keydown', (e) => {
 document.getElementById('product-search').addEventListener('blur', () => {
   if (App.currentView !== 'pos') return;
   setTimeout(() => {
+    if (window._qtyFocused) return;
     const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
     const activeTag = document.activeElement?.tagName;
     const isInteractable = ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(activeTag);
@@ -1391,10 +1485,50 @@ document.getElementById('product-search').addEventListener('blur', () => {
 });
 
 /* ============================
-   INIT
+   LOW STOCK ALERTS
    ============================ */
+function checkLowStockAlerts() {
+  const settings = Store.getSettings();
+  if (!settings.lowStockAlert) return;
+  const threshold = settings.lowStockQty || 5;
+  const low = Store.getProducts().filter(p =>
+    p.active !== false && p.trackStock !== false && p.stock <= threshold && p.stock > 0
+  );
+  const out = Store.getProducts().filter(p =>
+    p.active !== false && p.trackStock !== false && p.stock <= 0
+  );
+
+  // Show persistent banner if any low/out stock
+  let banner = document.getElementById('stock-alert-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.id = 'stock-alert-banner';
+    banner.className = 'stock-alert-banner hidden';
+    document.getElementById('screen-pos').querySelector('.pos-main').prepend(banner);
+  }
+
+  if (out.length || low.length) {
+    const outMsg = out.length ? `<strong>${out.length} out of stock</strong>` : '';
+    const lowMsg = low.length ? `<strong>${low.length} low stock</strong>` : '';
+    const items = [...out.slice(0,3), ...low.slice(0,3)].map(p => p.name).join(', ');
+    const suffix = (out.length + low.length) > 6 ? ' & more' : '';
+    banner.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+      <span>${[outMsg, lowMsg].filter(Boolean).join(' · ')} — ${escHtml(items)}${suffix}</span>
+      <button class="banner-goto-inventory" onclick="document.querySelector('[data-view=inventory]').click()">View Inventory →</button>
+      <button class="banner-dismiss" onclick="this.closest('.stock-alert-banner').classList.add('hidden')">✕</button>`;
+    banner.classList.remove('hidden');
+  } else {
+    banner.classList.add('hidden');
+  }
+}
+
+
 (async function init() {
+  // Always start on login screen — never auto-resume a session
+  Store.clearSession();
   await seedDefaultData();
   await initAuth();
   updateHeldBadge();
+  checkLowStockAlerts();
 })();
