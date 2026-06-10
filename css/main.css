@@ -28,9 +28,9 @@
   --info: #1155AA;
   --info-bg: #EEF4FF;
 
-  --nav-w: 200px;
-  --radius: 8px;
-  --radius-lg: 12px;
+  --nav-w: 220px;
+  --radius: 10px;
+  --radius-lg: 14px;
   --shadow: 0 1px 4px rgba(0,0,0,0.08), 0 0 0 0.5px rgba(0,0,0,0.07);
   --shadow-lg: 0 4px 20px rgba(0,0,0,0.12), 0 0 0 0.5px rgba(0,0,0,0.07);
 
@@ -43,7 +43,7 @@
 html, body {
   height: 100%;
   font-family: var(--font);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.5;
   color: var(--text);
   background: var(--bg);
@@ -51,9 +51,9 @@ html, body {
 }
 
 /* ---- Typography ---- */
-h1 { font-size: 1.6rem; font-weight: 600; }
-h2 { font-size: 1.2rem; font-weight: 600; }
-h3 { font-size: 1rem; font-weight: 600; }
+h1 { font-size: 1.75rem; font-weight: 600; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.1rem; font-weight: 600; }
 h4 { font-size: 0.9rem; font-weight: 600; color: var(--text-secondary); text-transform: uppercase; letter-spacing: 0.04em; }
 code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; }
 
@@ -88,6 +88,19 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
 }
 .login-logo h1 { font-size: 1.8rem; color: var(--text); }
 .login-logo p { color: var(--text-muted); font-size: 0.85rem; margin-top: 0.25rem; }
+.login-form {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+.login-form .field { margin-bottom: 1rem; }
+.login-form .field input {
+  width: 100%;
+  display: block;
+  box-sizing: border-box;
+  padding: 0.65rem 0.75rem;
+  font-size: 1rem;
+}
 .login-hint {
   display: flex;
   flex-direction: column;
@@ -140,15 +153,15 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
 .nav-link {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0.6rem 1rem;
+  gap: 12px;
+  padding: 0.75rem 1.25rem;
   color: rgba(255,255,255,0.55);
   text-decoration: none;
   border-radius: 0;
   transition: all 0.15s;
-  font-size: 0.875rem;
+  font-size: 0.95rem;
 }
-.nav-link svg { width: 18px; height: 18px; flex-shrink: 0; }
+.nav-link svg { width: 20px; height: 20px; flex-shrink: 0; }
 .nav-link:hover { color: rgba(255,255,255,0.85); background: rgba(255,255,255,0.06); }
 .nav-link.active {
   color: #fff;
@@ -206,7 +219,7 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
    ============================ */
 .pos-register {
   display: grid;
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: 1fr 420px;
   height: 100%;
   overflow: hidden;
 }
@@ -273,8 +286,8 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
   overflow-y: auto;
   padding: 0.75rem;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-  gap: 0.5rem;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.6rem;
   align-content: start;
 }
 
@@ -282,12 +295,12 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
   background: var(--surface);
   border: 0.5px solid var(--border);
   border-radius: var(--radius);
-  padding: 0.75rem;
+  padding: 0.9rem;
   cursor: pointer;
   transition: all 0.12s;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 5px;
   position: relative;
   user-select: none;
 }
@@ -295,16 +308,9 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
 .product-card:active { transform: scale(0.97); }
 .product-card.out-of-stock { opacity: 0.45; cursor: not-allowed; }
 
-.product-category-dot {
-  width: 8px; height: 8px;
-  border-radius: 50%;
-  background: var(--orange);
-  position: absolute;
-  top: 8px; right: 8px;
-}
-.product-name { font-size: 0.85rem; font-weight: 500; line-height: 1.3; }
-.product-price { font-size: 1rem; font-weight: 700; color: var(--orange); margin-top: 2px; }
-.product-stock { font-size: 0.72rem; color: var(--text-muted); }
+.product-name { font-size: 0.95rem; font-weight: 500; line-height: 1.3; }
+.product-price { font-size: 1.1rem; font-weight: 700; color: var(--orange); margin-top: 2px; }
+.product-stock { font-size: 0.78rem; color: var(--text-muted); }
 .product-stock.low { color: var(--warning); font-weight: 500; }
 .product-stock.out { color: var(--danger); font-weight: 500; }
 
@@ -375,34 +381,34 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
 }
 .cart-item:hover { background: var(--bg); }
 .cart-item-info { flex: 1; min-width: 0; }
-.cart-item-name { font-size: 0.85rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.cart-item-price { font-size: 0.75rem; color: var(--text-muted); }
-.cart-item-controls { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.cart-item-name { font-size: 0.95rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cart-item-price { font-size: 0.8rem; color: var(--text-muted); }
+.cart-item-controls { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
 .qty-btn {
-  width: 26px; height: 26px;
+  width: 30px; height: 30px;
   border: 0.5px solid var(--border-strong);
   background: var(--surface);
   border-radius: 6px;
   cursor: pointer;
   display: flex; align-items: center; justify-content: center;
-  font-size: 1rem; font-weight: 500;
+  font-size: 1.1rem; font-weight: 500;
   color: var(--text);
   transition: all 0.12s;
   line-height: 1;
 }
 .qty-btn:hover { border-color: var(--orange); color: var(--orange); }
 .qty-input {
-  width: 36px;
+  width: 40px;
   text-align: center;
   border: 0.5px solid var(--border-strong);
   border-radius: 6px;
   padding: 2px;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
   font-weight: 600;
   outline: none;
 }
 .qty-input:focus { border-color: var(--orange); }
-.cart-item-total { font-size: 0.85rem; font-weight: 600; min-width: 60px; text-align: right; }
+.cart-item-total { font-size: 0.95rem; font-weight: 600; min-width: 68px; text-align: right; }
 .cart-item-remove {
   background: none; border: none;
   color: var(--text-muted);
@@ -489,23 +495,23 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.85rem;
+  font-size: 0.95rem;
 }
 .data-table th {
   text-align: left;
-  padding: 0.6rem 1rem;
+  padding: 0.7rem 1rem;
   background: var(--surface2);
   border-bottom: 0.5px solid var(--border);
   font-weight: 600;
   color: var(--text-secondary);
-  font-size: 0.78rem;
+  font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.03em;
   white-space: nowrap;
   position: sticky; top: 0; z-index: 1;
 }
 .data-table td {
-  padding: 0.6rem 1rem;
+  padding: 0.7rem 1rem;
   border-bottom: 0.5px solid var(--border);
   color: var(--text);
   vertical-align: middle;
@@ -633,12 +639,12 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
   align-items: center;
   justify-content: center;
   gap: 6px;
-  padding: 0.5rem 1rem;
+  padding: 0.55rem 1.1rem;
   border-radius: var(--radius);
   border: 0.5px solid var(--border-strong);
   background: var(--surface);
   color: var(--text);
-  font-size: 0.875rem;
+  font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.12s;
@@ -682,11 +688,11 @@ code { font-family: var(--font-mono); background: var(--bg); padding: 2px 6px; b
 .checkbox-field label { margin: 0 !important; font-size: 0.875rem !important; color: var(--text) !important; font-weight: 400 !important; }
 
 .input-full, .input-sm, input[type="text"], input[type="number"], input[type="password"], input[type="email"], input[type="tel"], input[type="date"], select, textarea {
-  padding: 0.45rem 0.65rem;
+  padding: 0.5rem 0.75rem;
   border: 0.5px solid var(--border-strong);
   border-radius: var(--radius);
   background: var(--surface);
-  font-size: 0.875rem;
+  font-size: 0.95rem;
   color: var(--text);
   outline: none;
   font-family: var(--font);

@@ -77,27 +77,34 @@ async function seedDefaultData() {
   // Categories
   if (!Store.getCategories().length) {
     Store.saveCategories([
-      { id: OrangeCrypto.uid(), name: 'Food', color: '#E8650A' },
+      { id: OrangeCrypto.uid(), name: 'Groceries', color: '#E8650A' },
       { id: OrangeCrypto.uid(), name: 'Beverages', color: '#1A7D45' },
       { id: OrangeCrypto.uid(), name: 'Snacks', color: '#1155AA' },
-      { id: OrangeCrypto.uid(), name: 'Others', color: '#888' },
+      { id: OrangeCrypto.uid(), name: 'Personal Care', color: '#8B5CF6' },
+      { id: OrangeCrypto.uid(), name: 'Household', color: '#888' },
     ]);
   }
   // Products
   if (!Store.getProducts().length) {
     const cats = Store.getCategories();
-    const food = cats.find(c => c.name === 'Food')?.id || cats[0]?.id;
+    const groc = cats.find(c => c.name === 'Groceries')?.id || cats[0]?.id;
     const bev  = cats.find(c => c.name === 'Beverages')?.id || cats[0]?.id;
     const snk  = cats.find(c => c.name === 'Snacks')?.id || cats[0]?.id;
+    const care = cats.find(c => c.name === 'Personal Care')?.id || cats[0]?.id;
+    const hh   = cats.find(c => c.name === 'Household')?.id || cats[0]?.id;
     Store.saveProducts([
-      { id: OrangeCrypto.uid(), name: 'Fried Rice', sku: 'FOOD001', categoryId: food, price: 55, cost: 25, stock: 50, unit: 'plate', trackStock: true, active: true, createdAt: Date.now() },
-      { id: OrangeCrypto.uid(), name: 'Chicken Adobo', sku: 'FOOD002', categoryId: food, price: 80, cost: 40, stock: 30, unit: 'plate', trackStock: true, active: true, createdAt: Date.now() },
-      { id: OrangeCrypto.uid(), name: 'Sinigang na Baboy', sku: 'FOOD003', categoryId: food, price: 95, cost: 50, stock: 20, unit: 'bowl', trackStock: true, active: true, createdAt: Date.now() },
-      { id: OrangeCrypto.uid(), name: 'Softdrinks (Regular)', sku: 'BEV001', categoryId: bev, price: 30, cost: 15, stock: 100, unit: 'can', trackStock: true, active: true, createdAt: Date.now() },
-      { id: OrangeCrypto.uid(), name: 'Bottled Water', sku: 'BEV002', categoryId: bev, price: 20, cost: 8, stock: 150, unit: 'bottle', trackStock: true, active: true, createdAt: Date.now() },
-      { id: OrangeCrypto.uid(), name: 'Brewed Coffee', sku: 'BEV003', categoryId: bev, price: 45, cost: 18, stock: 80, unit: 'cup', trackStock: true, active: true, createdAt: Date.now() },
-      { id: OrangeCrypto.uid(), name: 'Potato Chips', sku: 'SNK001', categoryId: snk, price: 35, cost: 20, stock: 60, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
-      { id: OrangeCrypto.uid(), name: 'Peanuts', sku: 'SNK002', categoryId: snk, price: 25, cost: 12, stock: 4, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Rice (5kg)', sku: 'GRC001', categoryId: groc, price: 280, cost: 220, stock: 30, unit: 'bag', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Cooking Oil (1L)', sku: 'GRC002', categoryId: groc, price: 95, cost: 70, stock: 40, unit: 'bottle', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Sugar (1kg)', sku: 'GRC003', categoryId: groc, price: 75, cost: 58, stock: 50, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Softdrinks 1.5L', sku: 'BEV001', categoryId: bev, price: 65, cost: 45, stock: 60, unit: 'bottle', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Mineral Water 500ml', sku: 'BEV002', categoryId: bev, price: 20, cost: 10, stock: 100, unit: 'bottle', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Coffee 3-in-1 (10s)', sku: 'BEV003', categoryId: bev, price: 55, cost: 38, stock: 80, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Potato Chips 60g', sku: 'SNK001', categoryId: snk, price: 35, cost: 22, stock: 60, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Biscuits 150g', sku: 'SNK002', categoryId: snk, price: 28, cost: 18, stock: 4, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Shampoo Sachet', sku: 'CRE001', categoryId: care, price: 8, cost: 4, stock: 200, unit: 'pc', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Soap Bar 90g', sku: 'CRE002', categoryId: care, price: 32, cost: 20, stock: 80, unit: 'bar', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Dishwashing Liquid', sku: 'HH001', categoryId: hh, price: 45, cost: 30, stock: 35, unit: 'bottle', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Laundry Detergent', sku: 'HH002', categoryId: hh, price: 68, cost: 48, stock: 25, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
     ]);
   }
   // Sample customers
@@ -176,6 +183,7 @@ function enterPOS() {
   renderProductGrid();
   renderCartCustomers();
   loadCurrentView('pos');
+  setTimeout(maintainSearchFocus, 100);
 }
 
 function showScreen(id) {
@@ -208,6 +216,7 @@ function loadCurrentView(view) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   const el = document.getElementById('view-' + view);
   if (el) el.classList.add('active');
+  if (view === 'pos') setTimeout(maintainSearchFocus, 50);
   if (view === 'orders') renderOrders();
   if (view === 'inventory') renderInventory();
   if (view === 'customers') renderCustomers();
@@ -829,7 +838,7 @@ function renderInventory() {
     </tr>`;
   }).join('');
 
-  tbody.querySelectorAll('[data-edit-product]').forEach(btn => openProductModal(btn.dataset.editProduct));
+  tbody.querySelectorAll('[data-edit-product]').forEach(btn => btn.addEventListener('click', openProductModal(btn.dataset.editProduct)));
   tbody.querySelectorAll('[data-del-product]').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (await confirm('Delete Product', `Delete "${Store.getProducts().find(p=>p.id===btn.dataset.delProduct)?.name}"? This cannot be undone.`)) {
@@ -1281,35 +1290,104 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
 });
 
 /* ============================
-   BARCODE / KEYBOARD SHORTCUTS
+   BARCODE SCANNER + SEARCH FOCUS
    ============================ */
-let barcodeBuffer = '';
-let barcodeTimer = null;
+
+// Always keep the product search focused when on the POS view
+// and no modal is open. This lets USB barcode scanners work without clicking.
+function maintainSearchFocus() {
+  if (App.currentView !== 'pos') return;
+  const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
+  if (anyModalOpen) return;
+  const searchEl = document.getElementById('product-search');
+  if (document.activeElement !== searchEl) searchEl.focus();
+}
+
+// Re-focus search after modal closes or view changes
+document.addEventListener('click', (e) => {
+  if (App.currentView !== 'pos') return;
+  const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
+  if (!anyModalOpen) setTimeout(maintainSearchFocus, 50);
+});
+
+// Escape closes modals and returns focus to search
 document.addEventListener('keydown', (e) => {
-  // Skip if typing in an input
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
-    return;
+    setTimeout(maintainSearchFocus, 50);
   }
-  // Barcode scanner: fast numeric input ending with Enter
-  if (/^\d$/.test(e.key)) {
-    barcodeBuffer += e.key;
-    clearTimeout(barcodeTimer);
-    barcodeTimer = setTimeout(() => { barcodeBuffer = ''; }, 100);
-  } else if (e.key === 'Enter' && barcodeBuffer.length >= 3) {
-    const barcode = barcodeBuffer;
-    barcodeBuffer = '';
-    const product = Store.getProducts().find(p => p.sku === barcode && p.active !== false);
-    if (product) {
-      addToCart(product.id);
-      toast(`Added: ${product.name}`, 'success');
-    } else {
-      toast(`Barcode not found: ${barcode}`, 'error');
+});
+
+// Barcode scanner logic inside the search input:
+// USB scanners type fast and send Enter. We detect this by tracking
+// time between keystrokes — if Enter arrives within 80ms of last char,
+// treat entire input value as a barcode lookup.
+let lastKeyTime = 0;
+let scannerMode = false;
+let scannerTimer = null;
+
+document.getElementById('product-search').addEventListener('keydown', (e) => {
+  const now = Date.now();
+  const gap = now - lastKeyTime;
+  lastKeyTime = now;
+
+  // If keys are coming in very fast (scanner), flag scanner mode
+  if (gap < 80) scannerMode = true;
+
+  if (e.key === 'Enter') {
+    e.preventDefault();
+    const val = document.getElementById('product-search').value.trim();
+    if (!val) return;
+
+    if (scannerMode || val.length >= 3) {
+      // Try exact SKU match first (barcode)
+      const byBarcode = Store.getProducts().find(p => p.sku === val && p.active !== false);
+      if (byBarcode) {
+        if (byBarcode.trackStock !== false && byBarcode.stock <= 0) {
+          toast(`Out of stock: ${byBarcode.name}`, 'error');
+        } else {
+          addToCart(byBarcode.id);
+          toast(`Added: ${byBarcode.name}`, 'success');
+        }
+        document.getElementById('product-search').value = '';
+        searchTerm = '';
+        renderProductGrid();
+        scannerMode = false;
+        return;
+      }
+      // Try partial name match — if exactly one result, add it
+      const byName = Store.getProducts().filter(p =>
+        p.active !== false && p.name.toLowerCase().includes(val.toLowerCase())
+      );
+      if (byName.length === 1) {
+        addToCart(byName[0].id);
+        toast(`Added: ${byName[0].name}`, 'success');
+        document.getElementById('product-search').value = '';
+        searchTerm = '';
+        renderProductGrid();
+      } else if (byName.length === 0) {
+        toast(`Not found: "${val}"`, 'error');
+      }
+      // If multiple matches, just leave search results visible so user can tap
     }
-  } else {
-    barcodeBuffer = '';
+    scannerMode = false;
   }
+
+  // Reset scanner mode after a pause
+  clearTimeout(scannerTimer);
+  scannerTimer = setTimeout(() => { scannerMode = false; }, 200);
+});
+
+// When search box loses focus (user clicked elsewhere in POS view),
+// restore focus after a short delay unless a modal just opened or user left POS
+document.getElementById('product-search').addEventListener('blur', () => {
+  if (App.currentView !== 'pos') return;
+  setTimeout(() => {
+    const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
+    const activeTag = document.activeElement?.tagName;
+    const isInteractable = ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(activeTag);
+    if (!anyModalOpen && !isInteractable) maintainSearchFocus();
+  }, 150);
 });
 
 /* ============================
