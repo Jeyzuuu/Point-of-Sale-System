@@ -1,0 +1,1322 @@
+/**
+ * OrangePOS — Main Application
+ * Full-featured POS for Orange Pi One
+ */
+
+/* ============================
+   STATE
+   ============================ */
+const App = {
+  currentUser: null,
+  cart: [],
+  discount: { type: 'none', value: 0 },
+  selectedCustomerId: null,
+  currentView: 'pos',
+  currentOrderId: null, // for detail modal
+};
+
+const TAX_RATE_DEFAULT = 12;
+
+/* ============================
+   UTILITIES
+   ============================ */
+function fmt(n) {
+  const s = Store.getSettings();
+  return (s.currency || '₱') + Number(n).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtDate(ts) {
+  return new Date(ts).toLocaleString('en-PH', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+function escHtml(str) {
+  return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = 'toast' + (type ? ' ' + type : '');
+  el.textContent = msg;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => {
+    el.classList.add('fade-out');
+    setTimeout(() => el.remove(), 350);
+  }, 3000);
+}
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function hideModal(id) { document.getElementById(id).classList.add('hidden'); }
+function confirm(title, msg) {
+  return new Promise(resolve => {
+    document.getElementById('confirm-title').textContent = title;
+    document.getElementById('confirm-message').textContent = msg;
+    showModal('modal-confirm');
+    document.getElementById('confirm-ok').onclick = () => { hideModal('modal-confirm'); resolve(true); };
+    document.getElementById('confirm-cancel').onclick = () => { hideModal('modal-confirm'); resolve(false); };
+  });
+}
+function audit(action, details) {
+  Store.addAuditEntry({
+    id: OrangeCrypto.uid(),
+    ts: Date.now(),
+    user: App.currentUser ? App.currentUser.name : 'System',
+    action,
+    details: typeof details === 'object' ? JSON.stringify(details) : String(details),
+  });
+}
+
+/* ============================
+   SEED DATA
+   ============================ */
+async function seedDefaultData() {
+  // Users
+  if (!Store.getUsers().length) {
+    const adminHash = await OrangeCrypto.hashPin('1234');
+    const cashierHash = await OrangeCrypto.hashPin('5678');
+    Store.saveUsers([
+      { id: OrangeCrypto.uid(), name: 'Admin User', role: 'admin', pinHash: adminHash, active: true, createdAt: Date.now(), lastLogin: null },
+      { id: OrangeCrypto.uid(), name: 'Cashier 1', role: 'cashier', pinHash: cashierHash, active: true, createdAt: Date.now(), lastLogin: null },
+    ]);
+  }
+  // Categories
+  if (!Store.getCategories().length) {
+    Store.saveCategories([
+      { id: OrangeCrypto.uid(), name: 'Food', color: '#E8650A' },
+      { id: OrangeCrypto.uid(), name: 'Beverages', color: '#1A7D45' },
+      { id: OrangeCrypto.uid(), name: 'Snacks', color: '#1155AA' },
+      { id: OrangeCrypto.uid(), name: 'Others', color: '#888' },
+    ]);
+  }
+  // Products
+  if (!Store.getProducts().length) {
+    const cats = Store.getCategories();
+    const food = cats.find(c => c.name === 'Food')?.id || cats[0]?.id;
+    const bev  = cats.find(c => c.name === 'Beverages')?.id || cats[0]?.id;
+    const snk  = cats.find(c => c.name === 'Snacks')?.id || cats[0]?.id;
+    Store.saveProducts([
+      { id: OrangeCrypto.uid(), name: 'Fried Rice', sku: 'FOOD001', categoryId: food, price: 55, cost: 25, stock: 50, unit: 'plate', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Chicken Adobo', sku: 'FOOD002', categoryId: food, price: 80, cost: 40, stock: 30, unit: 'plate', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Sinigang na Baboy', sku: 'FOOD003', categoryId: food, price: 95, cost: 50, stock: 20, unit: 'bowl', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Softdrinks (Regular)', sku: 'BEV001', categoryId: bev, price: 30, cost: 15, stock: 100, unit: 'can', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Bottled Water', sku: 'BEV002', categoryId: bev, price: 20, cost: 8, stock: 150, unit: 'bottle', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Brewed Coffee', sku: 'BEV003', categoryId: bev, price: 45, cost: 18, stock: 80, unit: 'cup', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Potato Chips', sku: 'SNK001', categoryId: snk, price: 35, cost: 20, stock: 60, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Peanuts', sku: 'SNK002', categoryId: snk, price: 25, cost: 12, stock: 4, unit: 'pack', trackStock: true, active: true, createdAt: Date.now() },
+    ]);
+  }
+  // Sample customers
+  if (!Store.getCustomers().length) {
+    Store.saveCustomers([
+      { id: OrangeCrypto.uid(), name: 'Juan dela Cruz', phone: '09171234567', email: 'juan@example.com', address: 'Manila', senior: false, points: 120, totalSpent: 2400, visits: 12, createdAt: Date.now() },
+      { id: OrangeCrypto.uid(), name: 'Maria Santos', phone: '09281234567', email: '', address: 'Quezon City', senior: true, points: 55, totalSpent: 1100, visits: 5, createdAt: Date.now() },
+    ]);
+  }
+}
+
+/* ============================
+   AUTH
+   ============================ */
+async function initAuth() {
+  const session = Store.getSession();
+  if (session) {
+    // Validate session is still a valid user
+    const users = Store.getUsers();
+    const user = users.find(u => u.id === session.id && u.active !== false);
+    if (user) {
+      App.currentUser = user;
+      enterPOS();
+      return;
+    }
+    Store.clearSession();
+  }
+  showScreen('screen-login');
+}
+
+document.getElementById('form-login').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const pin = document.getElementById('login-pin').value;
+  const errEl = document.getElementById('login-error');
+  if (!pin) return;
+  const pinHash = await OrangeCrypto.hashPin(pin);
+  const user = Store.getUserByPin(pinHash);
+  if (!user) {
+    errEl.classList.remove('hidden');
+    document.getElementById('login-pin').value = '';
+    document.getElementById('login-pin').focus();
+    return;
+  }
+  errEl.classList.add('hidden');
+  App.currentUser = user;
+  user.lastLogin = Date.now();
+  Store.upsertUser(user);
+  Store.setSession(user);
+  audit('LOGIN', `User "${user.name}" logged in`);
+  enterPOS();
+});
+
+document.getElementById('btn-lock').addEventListener('click', lockTerminal);
+
+function lockTerminal() {
+  audit('LOCK', `Terminal locked by "${App.currentUser?.name}"`);
+  App.currentUser = null;
+  Store.clearSession();
+  document.getElementById('login-pin').value = '';
+  document.getElementById('login-error').classList.add('hidden');
+  showScreen('screen-login');
+}
+
+function enterPOS() {
+  const user = App.currentUser;
+  // Update nav user info
+  document.getElementById('nav-user-name').textContent = user.name;
+  document.getElementById('nav-user-role').textContent = capitalizeFirst(user.role);
+  document.getElementById('nav-user-avatar').textContent = user.name.split(' ').map(n => n[0]).join('').substring(0,2).toUpperCase();
+  // Show/hide admin nav
+  document.querySelectorAll('.admin-only').forEach(el => {
+    el.classList.toggle('visible', user.role === 'admin' || user.role === 'manager');
+  });
+  showScreen('screen-pos');
+  renderCategoryTabs();
+  renderProductGrid();
+  renderCartCustomers();
+  loadCurrentView('pos');
+}
+
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  document.body.classList.remove('loading');
+}
+
+/* ============================
+   NAVIGATION
+   ============================ */
+document.querySelectorAll('.nav-link').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    const view = link.dataset.view;
+    if (!view) return;
+    // Check admin access
+    if ((view === 'admin') && App.currentUser.role === 'cashier') {
+      toast('Access denied: Admin only', 'error');
+      return;
+    }
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    link.classList.add('active');
+    loadCurrentView(view);
+  });
+});
+
+function loadCurrentView(view) {
+  App.currentView = view;
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  const el = document.getElementById('view-' + view);
+  if (el) el.classList.add('active');
+  if (view === 'orders') renderOrders();
+  if (view === 'inventory') renderInventory();
+  if (view === 'customers') renderCustomers();
+  if (view === 'reports') renderReports();
+  if (view === 'admin') renderAdmin();
+}
+
+function capitalizeFirst(str) { return str ? str[0].toUpperCase() + str.slice(1) : ''; }
+
+/* ============================
+   PRODUCT GRID
+   ============================ */
+let currentCat = 'all';
+let searchTerm = '';
+
+function renderCategoryTabs() {
+  const tabs = document.getElementById('category-tabs');
+  const cats = Store.getCategories();
+  tabs.innerHTML = `<button class="cat-tab ${currentCat === 'all' ? 'active' : ''}" data-cat="all">All</button>`;
+  cats.forEach(cat => {
+    tabs.innerHTML += `<button class="cat-tab ${currentCat === cat.id ? 'active' : ''}" data-cat="${escHtml(cat.id)}">${escHtml(cat.name)}</button>`;
+  });
+  tabs.querySelectorAll('.cat-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentCat = btn.dataset.cat;
+      tabs.querySelectorAll('.cat-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      renderProductGrid();
+    });
+  });
+}
+
+function renderProductGrid() {
+  const settings = Store.getSettings();
+  const grid = document.getElementById('product-grid');
+  let products = Store.getProducts().filter(p => p.active !== false);
+  if (currentCat !== 'all') products = products.filter(p => p.categoryId === currentCat);
+  if (searchTerm) {
+    const s = searchTerm.toLowerCase();
+    products = products.filter(p =>
+      p.name.toLowerCase().includes(s) ||
+      (p.sku || '').toLowerCase().includes(s)
+    );
+  }
+  if (!products.length) {
+    grid.innerHTML = `<div class="cart-empty" style="grid-column:1/-1;height:200px"><p>No products found</p></div>`;
+    return;
+  }
+  const lowQty = settings.lowStockQty || 5;
+  grid.innerHTML = products.map(p => {
+    const outOfStock = p.trackStock !== false && p.stock <= 0;
+    const lowStock = p.trackStock !== false && p.stock > 0 && p.stock <= lowQty;
+    const stockLabel = p.trackStock === false ? '' : `<span class="product-stock ${outOfStock ? 'out' : lowStock ? 'low' : ''}">${outOfStock ? 'Out of stock' : `${p.stock} ${p.unit || 'pcs'}`}</span>`;
+    return `
+      <div class="product-card ${outOfStock ? 'out-of-stock' : ''}" data-id="${p.id}">
+        <div class="product-name">${escHtml(p.name)}</div>
+        <div class="product-price">${fmt(p.price)}</div>
+        ${stockLabel}
+      </div>`;
+  }).join('');
+  grid.querySelectorAll('.product-card:not(.out-of-stock)').forEach(card => {
+    card.addEventListener('click', () => addToCart(card.dataset.id));
+  });
+}
+
+document.getElementById('product-search').addEventListener('input', (e) => {
+  searchTerm = e.target.value;
+  renderProductGrid();
+});
+
+/* ============================
+   CART
+   ============================ */
+function addToCart(productId) {
+  const product = Store.getProducts().find(p => p.id === productId);
+  if (!product) return;
+  const existing = App.cart.find(i => i.productId === productId);
+  if (existing) {
+    if (product.trackStock !== false && existing.qty >= product.stock) {
+      toast('Not enough stock', 'error'); return;
+    }
+    existing.qty++;
+  } else {
+    App.cart.push({ productId, name: product.name, price: product.price, qty: 1 });
+  }
+  renderCart();
+  renderProductGrid();
+}
+
+function removeFromCart(productId) {
+  App.cart = App.cart.filter(i => i.productId !== productId);
+  renderCart();
+  renderProductGrid();
+}
+
+function updateCartQty(productId, qty) {
+  const item = App.cart.find(i => i.productId === productId);
+  if (!item) return;
+  qty = parseInt(qty) || 1;
+  if (qty <= 0) { removeFromCart(productId); return; }
+  const product = Store.getProducts().find(p => p.id === productId);
+  if (product?.trackStock !== false && qty > product.stock) {
+    toast(`Only ${product.stock} in stock`, 'error');
+    qty = product.stock;
+  }
+  item.qty = qty;
+  renderCart();
+}
+
+function calcTotals() {
+  const settings = Store.getSettings();
+  const taxRate = (settings.taxRate || TAX_RATE_DEFAULT) / 100;
+  const taxInclusive = settings.pricesTaxInclusive !== false;
+
+  const subtotalRaw = App.cart.reduce((s, i) => s + (i.price * i.qty), 0);
+  let discountAmt = 0;
+  const disc = App.discount;
+  if (disc.type === 'percent') discountAmt = subtotalRaw * (parseFloat(disc.value) || 0) / 100;
+  else if (disc.type === 'fixed') discountAmt = Math.min(parseFloat(disc.value) || 0, subtotalRaw);
+  else if (disc.type === 'senior') discountAmt = subtotalRaw * 0.20;
+
+  const afterDiscount = subtotalRaw - discountAmt;
+
+  let taxAmt, subtotal;
+  if (taxInclusive) {
+    taxAmt = afterDiscount - afterDiscount / (1 + taxRate);
+    subtotal = afterDiscount / (1 + taxRate);
+  } else {
+    taxAmt = afterDiscount * taxRate;
+    subtotal = afterDiscount;
+  }
+  const total = taxInclusive ? afterDiscount : afterDiscount + taxAmt;
+
+  return { subtotalRaw, discountAmt, subtotal, taxAmt, total };
+}
+
+function renderCart() {
+  const el = document.getElementById('cart-items');
+  if (!App.cart.length) {
+    el.innerHTML = `<div class="cart-empty">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="48" height="48"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61h9.72a2 2 0 001.99-1.61L23 6H6"/></svg>
+      <p>Cart is empty</p><span>Tap a product to add it</span></div>`;
+    document.getElementById('btn-checkout').disabled = true;
+  } else {
+    el.innerHTML = App.cart.map(item => `
+      <div class="cart-item">
+        <div class="cart-item-info">
+          <div class="cart-item-name" title="${escHtml(item.name)}">${escHtml(item.name)}</div>
+          <div class="cart-item-price">${fmt(item.price)} each</div>
+        </div>
+        <div class="cart-item-controls">
+          <button class="qty-btn" data-action="dec" data-id="${item.productId}">−</button>
+          <input class="qty-input" type="number" value="${item.qty}" min="1" data-id="${item.productId}">
+          <button class="qty-btn" data-action="inc" data-id="${item.productId}">+</button>
+        </div>
+        <span class="cart-item-total">${fmt(item.price * item.qty)}</span>
+        <button class="cart-item-remove" data-id="${item.productId}" title="Remove">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+        </button>
+      </div>`).join('');
+
+    el.querySelectorAll('.qty-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.id;
+        const item = App.cart.find(i => i.productId === id);
+        if (!item) return;
+        const delta = btn.dataset.action === 'inc' ? 1 : -1;
+        updateCartQty(id, item.qty + delta);
+      });
+    });
+    el.querySelectorAll('.qty-input').forEach(input => {
+      input.addEventListener('change', () => updateCartQty(input.dataset.id, input.value));
+    });
+    el.querySelectorAll('.cart-item-remove').forEach(btn => {
+      btn.addEventListener('click', () => removeFromCart(btn.dataset.id));
+    });
+    document.getElementById('btn-checkout').disabled = false;
+  }
+
+  const { subtotalRaw, discountAmt, taxAmt, total } = calcTotals();
+  document.getElementById('cart-subtotal').textContent = fmt(subtotalRaw);
+  document.getElementById('cart-discount').textContent = '-' + fmt(discountAmt);
+  document.getElementById('cart-tax').textContent = fmt(taxAmt);
+  document.getElementById('cart-total').textContent = fmt(total);
+}
+
+function clearCart() {
+  App.cart = [];
+  App.discount = { type: 'none', value: 0 };
+  App.selectedCustomerId = null;
+  document.getElementById('discount-type').value = 'none';
+  document.getElementById('discount-value').value = '';
+  document.getElementById('cart-customer').value = '';
+  renderCart();
+  renderProductGrid();
+}
+
+document.getElementById('btn-clear-cart').addEventListener('click', async () => {
+  if (!App.cart.length) return;
+  if (await confirm('Clear Cart', 'Remove all items from the cart?')) clearCart();
+});
+
+document.getElementById('discount-type').addEventListener('change', (e) => {
+  App.discount.type = e.target.value;
+  const valInput = document.getElementById('discount-value');
+  valInput.disabled = e.target.value === 'none' || e.target.value === 'senior';
+  if (e.target.value === 'senior') { App.discount.value = 20; valInput.value = '20'; }
+  else if (e.target.value === 'none') { App.discount.value = 0; valInput.value = ''; }
+  renderCart();
+});
+document.getElementById('discount-value').addEventListener('input', (e) => {
+  App.discount.value = parseFloat(e.target.value) || 0;
+  renderCart();
+});
+document.getElementById('cart-customer').addEventListener('change', (e) => {
+  App.selectedCustomerId = e.target.value || null;
+  // Auto-apply senior discount if customer is senior
+  if (App.selectedCustomerId) {
+    const c = Store.getCustomers().find(x => x.id === App.selectedCustomerId);
+    if (c?.senior) {
+      document.getElementById('discount-type').value = 'senior';
+      App.discount = { type: 'senior', value: 20 };
+      renderCart();
+      toast('Senior/PWD discount applied', 'success');
+    }
+  }
+});
+
+/* ============================
+   HOLD ORDERS
+   ============================ */
+document.getElementById('btn-hold').addEventListener('click', () => {
+  if (!App.cart.length) { toast('Cart is empty', 'error'); return; }
+  Store.addHeld({
+    id: OrangeCrypto.uid(),
+    heldAt: Date.now(),
+    cart: [...App.cart],
+    discount: { ...App.discount },
+    customerId: App.selectedCustomerId,
+    label: `Order held at ${new Date().toLocaleTimeString()}`,
+  });
+  updateHeldBadge();
+  clearCart();
+  toast('Order held');
+});
+
+document.getElementById('btn-held-orders').addEventListener('click', () => {
+  renderHeldOrders();
+  showModal('modal-held');
+});
+
+function renderHeldOrders() {
+  const held = Store.getHeld();
+  const el = document.getElementById('held-orders-list');
+  if (!held.length) {
+    el.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:1rem">No held orders</p>';
+    return;
+  }
+  el.innerHTML = held.map(h => `
+    <div style="border:0.5px solid var(--border);border-radius:var(--radius);padding:0.75rem;margin-bottom:0.5rem;display:flex;align-items:center;justify-content:space-between;gap:8px">
+      <div>
+        <div style="font-weight:500;font-size:0.875rem">${escHtml(h.label)}</div>
+        <div style="font-size:0.78rem;color:var(--text-muted)">${h.cart.length} item(s)</div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-primary btn-sm" data-held-id="${h.id}">Resume</button>
+        <button class="btn btn-sm btn-danger" data-held-del="${h.id}">Delete</button>
+      </div>
+    </div>`).join('');
+  el.querySelectorAll('[data-held-id]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const h = Store.getHeld().find(x => x.id === btn.dataset.heldId);
+      if (!h) return;
+      if (App.cart.length) { toast('Please clear the current cart first', 'error'); return; }
+      App.cart = h.cart;
+      App.discount = h.discount;
+      App.selectedCustomerId = h.customerId;
+      if (h.customerId) document.getElementById('cart-customer').value = h.customerId;
+      Store.removeHeld(h.id);
+      updateHeldBadge();
+      renderCart();
+      hideModal('modal-held');
+      toast('Order resumed');
+    });
+  });
+  el.querySelectorAll('[data-held-del]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      Store.removeHeld(btn.dataset.heldDel);
+      renderHeldOrders();
+      updateHeldBadge();
+    });
+  });
+}
+
+function updateHeldBadge() {
+  const count = Store.getHeld().length;
+  const badge = document.getElementById('held-badge');
+  badge.textContent = count;
+  badge.classList.toggle('hidden', count === 0);
+}
+
+/* ============================
+   CHECKOUT
+   ============================ */
+document.getElementById('btn-checkout').addEventListener('click', openCheckout);
+
+function openCheckout() {
+  if (!App.cart.length) return;
+  const { subtotalRaw, discountAmt, taxAmt, total } = calcTotals();
+  document.getElementById('co-subtotal').textContent = fmt(subtotalRaw);
+  document.getElementById('co-discount').textContent = '-' + fmt(discountAmt);
+  document.getElementById('co-tax').textContent = fmt(taxAmt);
+  document.getElementById('co-total').textContent = fmt(total);
+  document.getElementById('cash-tendered').value = '';
+  document.getElementById('cash-change').textContent = fmt(0);
+  document.getElementById('checkout-note').value = '';
+  // Reset payment method
+  document.querySelectorAll('.pay-method').forEach(b => b.classList.remove('active'));
+  document.querySelector('.pay-method[data-method="cash"]').classList.add('active');
+  document.getElementById('cash-tendered-wrap').classList.remove('hidden');
+  document.getElementById('split-payment-wrap').classList.add('hidden');
+  showModal('modal-checkout');
+}
+
+document.querySelectorAll('.pay-method').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.pay-method').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const method = btn.dataset.method;
+    document.getElementById('cash-tendered-wrap').classList.toggle('hidden', method !== 'cash');
+    document.getElementById('split-payment-wrap').classList.toggle('hidden', method !== 'split');
+  });
+});
+
+document.getElementById('cash-tendered').addEventListener('input', (e) => {
+  const { total } = calcTotals();
+  const tendered = parseFloat(e.target.value) || 0;
+  const change = tendered - total;
+  const el = document.getElementById('cash-change');
+  el.textContent = fmt(Math.max(0, change));
+  el.style.color = change < 0 ? 'var(--danger)' : 'var(--success)';
+});
+
+document.querySelectorAll('.quick-cash-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const { total } = calcTotals();
+    const amt = btn.dataset.amount === 'exact' ? total : parseFloat(btn.dataset.amount);
+    document.getElementById('cash-tendered').value = amt.toFixed(2);
+    document.getElementById('cash-tendered').dispatchEvent(new Event('input'));
+  });
+});
+
+document.getElementById('btn-complete-sale').addEventListener('click', completeSale);
+
+async function completeSale() {
+  const { subtotalRaw, discountAmt, taxAmt, total } = calcTotals();
+  const method = document.querySelector('.pay-method.active')?.dataset.method || 'cash';
+  const settings = Store.getSettings();
+
+  // Validate payment
+  if (method === 'cash') {
+    const tendered = parseFloat(document.getElementById('cash-tendered').value) || 0;
+    if (tendered < total) { toast('Insufficient cash tendered', 'error'); return; }
+  }
+
+  const orderId = OrangeCrypto.uid();
+  const orderNum = OrangeCrypto.orderNum();
+  const order = {
+    id: orderId,
+    orderNum,
+    createdAt: Date.now(),
+    cashierId: App.currentUser.id,
+    cashierName: App.currentUser.name,
+    customerId: App.selectedCustomerId || null,
+    items: App.cart.map(i => ({ ...i })),
+    subtotal: subtotalRaw,
+    discountAmt,
+    discountType: App.discount.type,
+    taxAmt,
+    total,
+    paymentMethod: method,
+    cashTendered: method === 'cash' ? parseFloat(document.getElementById('cash-tendered').value) || 0 : total,
+    note: document.getElementById('checkout-note').value,
+    status: 'completed',
+  };
+
+  Store.addOrder(order);
+  Store.decrementStock(App.cart);
+
+  // Update customer stats
+  if (App.selectedCustomerId) {
+    const points = Math.floor(total / 100); // 1 point per ₱100
+    Store.updateCustomerStats(App.selectedCustomerId, total, points);
+  }
+
+  audit('SALE', { orderNum, total: fmt(total), method, cashier: App.currentUser.name });
+
+  hideModal('modal-checkout');
+  showReceipt(order);
+
+  const cartCopy = [...App.cart];
+  clearCart();
+  renderProductGrid();
+  updateHeldBadge();
+  toast(`Sale complete! ${fmt(total)}`, 'success');
+}
+
+/* ============================
+   RECEIPT
+   ============================ */
+function showReceipt(order) {
+  const settings = Store.getSettings();
+  const customer = order.customerId ? Store.getCustomers().find(c => c.id === order.customerId) : null;
+  const change = order.cashTendered - order.total;
+
+  let html = `
+    <div class="receipt-header">
+      <div class="receipt-title">${escHtml(settings.bizName || 'My Store')}</div>
+      <div style="font-size:0.75rem">${escHtml(settings.bizAddress || '')}</div>
+      <div style="font-size:0.75rem">${escHtml(settings.bizPhone || '')}</div>
+      ${settings.bizTin ? `<div style="font-size:0.75rem">TIN: ${escHtml(settings.bizTin)}</div>` : ''}
+    </div>
+    <div class="receipt-divider"></div>
+    <div class="receipt-row"><span>Order #</span><span>${escHtml(order.orderNum)}</span></div>
+    <div class="receipt-row"><span>Date</span><span>${fmtDate(order.createdAt)}</span></div>
+    <div class="receipt-row"><span>Cashier</span><span>${escHtml(order.cashierName)}</span></div>
+    ${customer ? `<div class="receipt-row"><span>Customer</span><span>${escHtml(customer.name)}</span></div>` : ''}
+    <div class="receipt-divider"></div>
+    ${order.items.map(i => `
+      <div class="receipt-row">
+        <span>${escHtml(i.name)}</span>
+        <span>${fmt(i.price * i.qty)}</span>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-muted);padding-left:8px">${i.qty} × ${fmt(i.price)}</div>
+    `).join('')}
+    <div class="receipt-divider"></div>
+    <div class="receipt-row"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
+    ${order.discountAmt > 0 ? `<div class="receipt-row"><span>Discount (${order.discountType})</span><span>-${fmt(order.discountAmt)}</span></div>` : ''}
+    <div class="receipt-row"><span>VAT (${settings.taxRate || 12}%)</span><span>${fmt(order.taxAmt)}</span></div>
+    <div class="receipt-divider"></div>
+    <div class="receipt-row total"><span>TOTAL</span><span>${fmt(order.total)}</span></div>
+    <div class="receipt-row"><span>Payment (${escHtml(order.paymentMethod.toUpperCase())})</span><span>${fmt(order.cashTendered)}</span></div>
+    ${order.paymentMethod === 'cash' ? `<div class="receipt-row"><span>Change</span><span>${fmt(Math.max(0, change))}</span></div>` : ''}
+    ${order.note ? `<div class="receipt-divider"></div><div style="font-size:0.78rem">Note: ${escHtml(order.note)}</div>` : ''}
+    <div class="receipt-divider"></div>
+    <div class="receipt-footer">${escHtml(settings.receiptFooter || 'Thank you!')}</div>
+  `;
+
+  document.getElementById('receipt-content').innerHTML = html;
+  document.getElementById('modal-receipt').dataset.orderId = order.id;
+  showModal('modal-receipt');
+}
+
+document.getElementById('btn-print-receipt').addEventListener('click', () => window.print());
+document.getElementById('btn-new-sale').addEventListener('click', () => hideModal('modal-receipt'));
+
+/* ============================
+   ORDERS VIEW
+   ============================ */
+function renderOrders() {
+  let orders = Store.getOrders().slice().reverse();
+  const dateFilter = document.getElementById('orders-date').value;
+  const statusFilter = document.getElementById('orders-status').value;
+
+  if (dateFilter) {
+    const d = new Date(dateFilter);
+    orders = orders.filter(o => {
+      const od = new Date(o.createdAt);
+      return od.toDateString() === d.toDateString();
+    });
+  }
+  if (statusFilter) orders = orders.filter(o => o.status === statusFilter);
+
+  const tbody = document.getElementById('orders-tbody');
+  if (!orders.length) {
+    tbody.innerHTML = '<tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:2rem">No orders found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = orders.map(o => {
+    const customer = o.customerId ? Store.getCustomers().find(c => c.id === o.customerId) : null;
+    return `<tr>
+      <td><strong>${escHtml(o.orderNum)}</strong></td>
+      <td>${fmtDate(o.createdAt)}</td>
+      <td>${escHtml(o.cashierName)}</td>
+      <td>${customer ? escHtml(customer.name) : '<span style="color:var(--text-muted)">Walk-in</span>'}</td>
+      <td>${o.items.length} item(s)</td>
+      <td><strong>${fmt(o.total)}</strong></td>
+      <td><span style="text-transform:capitalize">${escHtml(o.paymentMethod)}</span></td>
+      <td><span class="status-badge status-${o.status}">${capitalizeFirst(o.status)}</span></td>
+      <td><button class="btn btn-secondary btn-sm" data-order-id="${o.id}">View</button></td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('[data-order-id]').forEach(btn => {
+    btn.addEventListener('click', () => openOrderDetail(btn.dataset.orderId));
+  });
+}
+
+document.getElementById('orders-date').addEventListener('change', renderOrders);
+document.getElementById('orders-status').addEventListener('change', renderOrders);
+
+function openOrderDetail(orderId) {
+  const order = Store.getOrders().find(o => o.id === orderId);
+  if (!order) return;
+  App.currentOrderId = orderId;
+  const customer = order.customerId ? Store.getCustomers().find(c => c.id === order.customerId) : null;
+  document.getElementById('order-detail-body').innerHTML = `
+    <div class="checkout-summary">
+      <div class="checkout-line"><span>Order #</span><strong>${escHtml(order.orderNum)}</strong></div>
+      <div class="checkout-line"><span>Date</span><span>${fmtDate(order.createdAt)}</span></div>
+      <div class="checkout-line"><span>Cashier</span><span>${escHtml(order.cashierName)}</span></div>
+      <div class="checkout-line"><span>Customer</span><span>${customer ? escHtml(customer.name) : 'Walk-in'}</span></div>
+      <div class="checkout-line"><span>Payment</span><span>${escHtml(order.paymentMethod)}</span></div>
+      <div class="checkout-line"><span>Status</span><span class="status-badge status-${order.status}">${capitalizeFirst(order.status)}</span></div>
+    </div>
+    <table class="data-table" style="margin:1rem 0">
+      <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+      <tbody>${order.items.map(i => `<tr>
+        <td>${escHtml(i.name)}</td>
+        <td>${i.qty}</td>
+        <td>${fmt(i.price)}</td>
+        <td>${fmt(i.price * i.qty)}</td>
+      </tr>`).join('')}</tbody>
+    </table>
+    <div class="checkout-summary">
+      <div class="checkout-line"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
+      ${order.discountAmt > 0 ? `<div class="checkout-line"><span>Discount</span><span>-${fmt(order.discountAmt)}</span></div>` : ''}
+      <div class="checkout-line"><span>Tax</span><span>${fmt(order.taxAmt)}</span></div>
+      <div class="checkout-line checkout-total"><span>Total</span><span>${fmt(order.total)}</span></div>
+    </div>
+  `;
+  document.getElementById('btn-refund-order').style.display = order.status === 'completed' ? '' : 'none';
+  showModal('modal-order');
+}
+
+document.getElementById('btn-refund-order').addEventListener('click', async () => {
+  if (App.currentUser?.role === 'cashier') { toast('Refunds require manager/admin access', 'error'); return; }
+  if (await confirm('Refund Order', 'Mark this order as refunded and restore stock?')) {
+    const order = Store.getOrders().find(o => o.id === App.currentOrderId);
+    if (!order) return;
+    Store.updateOrderStatus(App.currentOrderId, 'refunded');
+    Store.incrementStock(order.items);
+    audit('REFUND', { orderNum: order.orderNum, total: fmt(order.total) });
+    hideModal('modal-order');
+    renderOrders();
+    toast('Order refunded', 'success');
+  }
+});
+
+document.getElementById('btn-reprint-receipt').addEventListener('click', () => {
+  const order = Store.getOrders().find(o => o.id === App.currentOrderId);
+  if (order) { hideModal('modal-order'); showReceipt(order); }
+});
+
+document.getElementById('btn-export-orders').addEventListener('click', () => {
+  const orders = Store.getOrders();
+  const rows = [['Order#','Date','Cashier','Customer','Items','Subtotal','Discount','Tax','Total','Payment','Status']];
+  orders.forEach(o => {
+    const c = o.customerId ? Store.getCustomers().find(x => x.id === o.customerId) : null;
+    rows.push([o.orderNum, fmtDate(o.createdAt), o.cashierName, c ? c.name : 'Walk-in',
+      o.items.length, o.subtotal, o.discountAmt, o.taxAmt, o.total, o.paymentMethod, o.status]);
+  });
+  downloadCSV(rows, 'orders_export.csv');
+});
+
+function downloadCSV(rows, filename) {
+  const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+}
+
+/* ============================
+   INVENTORY VIEW
+   ============================ */
+function renderInventory() {
+  const search = document.getElementById('inventory-search').value.toLowerCase();
+  const catFilter = document.getElementById('inventory-cat-filter').value;
+  const settings = Store.getSettings();
+  const lowQty = settings.lowStockQty || 5;
+
+  // Populate category filter
+  const catSel = document.getElementById('inventory-cat-filter');
+  const currentCatFilter = catSel.value;
+  catSel.innerHTML = '<option value="">All Categories</option>';
+  Store.getCategories().forEach(c => {
+    catSel.innerHTML += `<option value="${c.id}" ${currentCatFilter === c.id ? 'selected' : ''}>${escHtml(c.name)}</option>`;
+  });
+
+  let products = Store.getProducts();
+  if (search) products = products.filter(p => p.name.toLowerCase().includes(search) || (p.sku||'').toLowerCase().includes(search));
+  if (catFilter) products = products.filter(p => p.categoryId === catFilter);
+
+  const cats = Store.getCategories();
+  const tbody = document.getElementById('inventory-tbody');
+  if (!products.length) {
+    tbody.innerHTML = '<tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:2rem">No products found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = products.map(p => {
+    const cat = cats.find(c => c.id === p.categoryId);
+    const isLow = p.trackStock !== false && p.stock <= lowQty && p.stock > 0;
+    const isOut = p.trackStock !== false && p.stock <= 0;
+    const stockStatus = isOut ? 'status-badge status-voided' : isLow ? 'status-badge status-low' : '';
+    return `<tr>
+      <td><code>${escHtml(p.sku || '—')}</code></td>
+      <td><strong>${escHtml(p.name)}</strong></td>
+      <td>${cat ? escHtml(cat.name) : '—'}</td>
+      <td>${fmt(p.price)}</td>
+      <td>${fmt(p.cost || 0)}</td>
+      <td><span class="${stockStatus}">${p.trackStock === false ? '∞' : p.stock}</span></td>
+      <td><span class="status-badge ${p.active !== false ? 'status-active' : 'status-inactive'}">${p.active !== false ? 'Active' : 'Inactive'}</span></td>
+      <td style="display:flex;gap:4px">
+        <button class="btn btn-secondary btn-sm" data-edit-product="${p.id}">Edit</button>
+        <button class="btn btn-sm" style="border-color:var(--danger);color:var(--danger)" data-del-product="${p.id}">Del</button>
+      </td>
+    </tr>`;
+  }).join('');
+
+  tbody.querySelectorAll('[data-edit-product]').forEach(btn => openProductModal(btn.dataset.editProduct));
+  tbody.querySelectorAll('[data-del-product]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (await confirm('Delete Product', `Delete "${Store.getProducts().find(p=>p.id===btn.dataset.delProduct)?.name}"? This cannot be undone.`)) {
+        audit('DELETE_PRODUCT', { id: btn.dataset.delProduct });
+        Store.deleteProduct(btn.dataset.delProduct);
+        renderInventory();
+        renderCategoryTabs();
+        renderProductGrid();
+        toast('Product deleted');
+      }
+    });
+  });
+}
+
+document.getElementById('inventory-search').addEventListener('input', renderInventory);
+document.getElementById('inventory-cat-filter').addEventListener('change', renderInventory);
+
+function openProductModal(productId) {
+  return (e) => {
+    const p = productId ? Store.getProducts().find(x => x.id === productId) : null;
+    document.getElementById('product-modal-title').textContent = p ? 'Edit Product' : 'Add Product';
+    document.getElementById('product-edit-id').value = p?.id || '';
+    document.getElementById('prd-name').value = p?.name || '';
+    document.getElementById('prd-sku').value = p?.sku || '';
+    document.getElementById('prd-price').value = p?.price || '';
+    document.getElementById('prd-cost').value = p?.cost || '';
+    document.getElementById('prd-stock').value = p?.stock ?? 0;
+    document.getElementById('prd-unit').value = p?.unit || 'pcs';
+    document.getElementById('prd-track-stock').checked = p?.trackStock !== false;
+    document.getElementById('prd-active').checked = p?.active !== false;
+    // Category dropdown
+    const catSel = document.getElementById('prd-category');
+    catSel.innerHTML = Store.getCategories().map(c =>
+      `<option value="${c.id}" ${p?.categoryId === c.id ? 'selected' : ''}>${escHtml(c.name)}</option>`
+    ).join('');
+    showModal('modal-product');
+  };
+}
+
+document.getElementById('btn-add-product').addEventListener('click', openProductModal(null));
+document.getElementById('btn-save-product').addEventListener('click', () => {
+  const name = document.getElementById('prd-name').value.trim();
+  if (!name) { toast('Product name is required', 'error'); return; }
+  const price = parseFloat(document.getElementById('prd-price').value);
+  if (!price || price <= 0) { toast('Valid price is required', 'error'); return; }
+  const existingId = document.getElementById('product-edit-id').value;
+  const product = {
+    id: existingId || OrangeCrypto.uid(),
+    name,
+    sku: document.getElementById('prd-sku').value.trim(),
+    categoryId: document.getElementById('prd-category').value,
+    price,
+    cost: parseFloat(document.getElementById('prd-cost').value) || 0,
+    stock: parseInt(document.getElementById('prd-stock').value) || 0,
+    unit: document.getElementById('prd-unit').value.trim() || 'pcs',
+    trackStock: document.getElementById('prd-track-stock').checked,
+    active: document.getElementById('prd-active').checked,
+    createdAt: existingId ? Store.getProducts().find(p=>p.id===existingId)?.createdAt : Date.now(),
+    updatedAt: Date.now(),
+  };
+  audit(existingId ? 'UPDATE_PRODUCT' : 'ADD_PRODUCT', { name, price });
+  Store.upsertProduct(product);
+  hideModal('modal-product');
+  renderInventory();
+  renderCategoryTabs();
+  renderProductGrid();
+  toast(existingId ? 'Product updated' : 'Product added', 'success');
+});
+
+/* ============================
+   CUSTOMERS VIEW
+   ============================ */
+function renderCartCustomers() {
+  const sel = document.getElementById('cart-customer');
+  const current = sel.value;
+  sel.innerHTML = '<option value="">Walk-in Customer</option>';
+  Store.getCustomers().forEach(c => {
+    sel.innerHTML += `<option value="${c.id}" ${current === c.id ? 'selected' : ''}>${escHtml(c.name)}${c.senior ? ' (Senior/PWD)' : ''}</option>`;
+  });
+}
+
+function renderCustomers() {
+  const search = document.getElementById('customer-search').value.toLowerCase();
+  let customers = Store.getCustomers();
+  if (search) customers = customers.filter(c =>
+    c.name.toLowerCase().includes(search) || (c.phone||'').includes(search) || (c.email||'').toLowerCase().includes(search)
+  );
+  const tbody = document.getElementById('customers-tbody');
+  if (!customers.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:2rem">No customers found</td></tr>';
+    return;
+  }
+  tbody.innerHTML = customers.map(c => `<tr>
+    <td><strong>${escHtml(c.name)}</strong>${c.senior ? ' <span class="status-badge status-low">Senior/PWD</span>' : ''}</td>
+    <td>${escHtml(c.phone || '—')}</td>
+    <td>${escHtml(c.email || '—')}</td>
+    <td><strong>${c.points || 0}</strong> pts</td>
+    <td>${fmt(c.totalSpent || 0)}</td>
+    <td>${c.visits || 0}</td>
+    <td style="display:flex;gap:4px">
+      <button class="btn btn-secondary btn-sm" data-edit-cust="${c.id}">Edit</button>
+      <button class="btn btn-sm" style="border-color:var(--danger);color:var(--danger)" data-del-cust="${c.id}">Del</button>
+    </td>
+  </tr>`).join('');
+
+  tbody.querySelectorAll('[data-edit-cust]').forEach(btn => btn.addEventListener('click', () => openCustomerModal(btn.dataset.editCust)));
+  tbody.querySelectorAll('[data-del-cust]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (await confirm('Delete Customer', 'Delete this customer record?')) {
+        Store.deleteCustomer(btn.dataset.delCust);
+        renderCustomers();
+        renderCartCustomers();
+        toast('Customer deleted');
+      }
+    });
+  });
+}
+
+document.getElementById('customer-search').addEventListener('input', renderCustomers);
+
+function openCustomerModal(customerId) {
+  const c = customerId ? Store.getCustomers().find(x => x.id === customerId) : null;
+  document.getElementById('customer-modal-title').textContent = c ? 'Edit Customer' : 'Add Customer';
+  document.getElementById('customer-edit-id').value = c?.id || '';
+  document.getElementById('cust-name').value = c?.name || '';
+  document.getElementById('cust-phone').value = c?.phone || '';
+  document.getElementById('cust-email').value = c?.email || '';
+  document.getElementById('cust-address').value = c?.address || '';
+  document.getElementById('cust-senior').checked = c?.senior || false;
+  showModal('modal-customer');
+}
+
+document.getElementById('btn-add-customer').addEventListener('click', () => openCustomerModal(null));
+document.getElementById('btn-save-customer').addEventListener('click', () => {
+  const name = document.getElementById('cust-name').value.trim();
+  if (!name) { toast('Customer name is required', 'error'); return; }
+  const existingId = document.getElementById('customer-edit-id').value;
+  const existing = existingId ? Store.getCustomers().find(c=>c.id===existingId) : null;
+  const customer = {
+    id: existingId || OrangeCrypto.uid(),
+    name,
+    phone: document.getElementById('cust-phone').value.trim(),
+    email: document.getElementById('cust-email').value.trim(),
+    address: document.getElementById('cust-address').value.trim(),
+    senior: document.getElementById('cust-senior').checked,
+    points: existing?.points || 0,
+    totalSpent: existing?.totalSpent || 0,
+    visits: existing?.visits || 0,
+    createdAt: existing?.createdAt || Date.now(),
+    lastVisit: existing?.lastVisit || null,
+  };
+  Store.upsertCustomer(customer);
+  hideModal('modal-customer');
+  renderCustomers();
+  renderCartCustomers();
+  toast(existingId ? 'Customer updated' : 'Customer added', 'success');
+});
+
+/* ============================
+   REPORTS VIEW
+   ============================ */
+function renderReports() {
+  const period = document.getElementById('report-period').value;
+  const now = new Date();
+  let start;
+  if (period === 'today') start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  else if (period === 'week') { const d = new Date(now); d.setDate(d.getDate() - d.getDay()); start = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); }
+  else if (period === 'month') start = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  else start = new Date(now.getFullYear(), 0, 1).getTime();
+
+  const orders = Store.getOrders().filter(o => o.createdAt >= start && o.status === 'completed');
+  const revenue = orders.reduce((s, o) => s + o.total, 0);
+  const tax = orders.reduce((s, o) => s + o.taxAmt, 0);
+  const items = orders.reduce((s, o) => s + o.items.reduce((ss, i) => ss + i.qty, 0), 0);
+  const costs = orders.reduce((s, o) => {
+    return s + o.items.reduce((ss, i) => {
+      const p = Store.getProducts().find(x => x.id === i.productId);
+      return ss + (p?.cost || 0) * i.qty;
+    }, 0);
+  }, 0);
+  const profit = revenue - tax - costs;
+  const avg = orders.length ? revenue / orders.length : 0;
+
+  document.getElementById('rpt-revenue').textContent = fmt(revenue);
+  document.getElementById('rpt-orders').textContent = orders.length;
+  document.getElementById('rpt-avg').textContent = fmt(avg);
+  document.getElementById('rpt-items').textContent = items;
+  document.getElementById('rpt-tax').textContent = fmt(tax);
+  document.getElementById('rpt-profit').textContent = fmt(profit);
+
+  // Top products
+  const productSales = {};
+  orders.forEach(o => o.items.forEach(i => {
+    if (!productSales[i.productId]) productSales[i.productId] = { name: i.name, qty: 0, revenue: 0 };
+    productSales[i.productId].qty += i.qty;
+    productSales[i.productId].revenue += i.price * i.qty;
+  }));
+  const top = Object.values(productSales).sort((a,b) => b.qty - a.qty).slice(0, 10);
+  document.getElementById('top-products-tbody').innerHTML = top.length
+    ? top.map(p => `<tr><td>${escHtml(p.name)}</td><td>${p.qty}</td><td>${fmt(p.revenue)}</td></tr>`).join('')
+    : '<tr><td colspan="3" style="text-align:center;color:var(--text-muted)">No data</td></tr>';
+
+  // Payment breakdown
+  const payBreakdown = {};
+  orders.forEach(o => {
+    payBreakdown[o.paymentMethod] = (payBreakdown[o.paymentMethod] || 0) + o.total;
+  });
+  document.getElementById('payment-breakdown').innerHTML = Object.entries(payBreakdown)
+    .map(([method, amt]) => `<div class="pay-bar"><span class="pay-bar-method">${capitalizeFirst(method)}</span><span class="pay-bar-amount">${fmt(amt)}</span></div>`).join('') || '<span style="color:var(--text-muted);font-size:0.85rem">No data</span>';
+}
+
+document.getElementById('report-period').addEventListener('change', renderReports);
+document.getElementById('btn-print-report').addEventListener('click', () => window.print());
+
+/* ============================
+   ADMIN VIEW
+   ============================ */
+function renderAdmin() {
+  renderUsers();
+  renderCategories();
+  renderAuditLog();
+  loadSettings();
+}
+
+// Admin tabs
+document.querySelectorAll('.admin-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('admin-' + tab.dataset.tab).classList.add('active');
+  });
+});
+
+// Users
+function renderUsers() {
+  const users = Store.getUsers();
+  const tbody = document.getElementById('users-tbody');
+  tbody.innerHTML = users.map(u => `<tr>
+    <td><strong>${escHtml(u.name)}</strong></td>
+    <td><span class="status-badge" style="background:var(--orange-bg);color:var(--orange-dark)">${capitalizeFirst(u.role)}</span></td>
+    <td>${u.lastLogin ? fmtDate(u.lastLogin) : '<span style="color:var(--text-muted)">Never</span>'}</td>
+    <td><span class="status-badge ${u.active !== false ? 'status-active' : 'status-inactive'}">${u.active !== false ? 'Active' : 'Inactive'}</span></td>
+    <td style="display:flex;gap:4px">
+      <button class="btn btn-secondary btn-sm" data-edit-user="${u.id}">Edit</button>
+      ${u.id !== App.currentUser?.id ? `<button class="btn btn-sm" style="border-color:var(--danger);color:var(--danger)" data-del-user="${u.id}">Del</button>` : ''}
+    </td>
+  </tr>`).join('');
+  tbody.querySelectorAll('[data-edit-user]').forEach(btn => btn.addEventListener('click', () => openUserModal(btn.dataset.editUser)));
+  tbody.querySelectorAll('[data-del-user]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (await confirm('Delete User', 'Delete this user account?')) {
+        audit('DELETE_USER', { id: btn.dataset.delUser });
+        Store.deleteUser(btn.dataset.delUser);
+        renderUsers();
+        toast('User deleted');
+      }
+    });
+  });
+}
+
+document.getElementById('btn-add-user').addEventListener('click', () => openUserModal(null));
+
+function openUserModal(userId) {
+  const u = userId ? Store.getUsers().find(x => x.id === userId) : null;
+  document.getElementById('user-modal-title').textContent = u ? 'Edit User' : 'Add User';
+  document.getElementById('user-edit-id').value = u?.id || '';
+  document.getElementById('usr-name').value = u?.name || '';
+  document.getElementById('usr-role').value = u?.role || 'cashier';
+  document.getElementById('usr-pin').value = '';
+  document.getElementById('usr-pin-confirm').value = '';
+  showModal('modal-user');
+}
+
+document.getElementById('btn-save-user').addEventListener('click', async () => {
+  const name = document.getElementById('usr-name').value.trim();
+  if (!name) { toast('Name is required', 'error'); return; }
+  const pin = document.getElementById('usr-pin').value;
+  const pinConfirm = document.getElementById('usr-pin-confirm').value;
+  const existingId = document.getElementById('user-edit-id').value;
+  const existing = existingId ? Store.getUsers().find(u=>u.id===existingId) : null;
+  let pinHash = existing?.pinHash;
+  if (pin) {
+    if (pin.length < 4) { toast('PIN must be at least 4 digits', 'error'); return; }
+    if (pin !== pinConfirm) { toast('PINs do not match', 'error'); return; }
+    if (!/^\d+$/.test(pin)) { toast('PIN must contain only numbers', 'error'); return; }
+    pinHash = await OrangeCrypto.hashPin(pin);
+  } else if (!existingId) {
+    toast('PIN is required for new users', 'error'); return;
+  }
+  const user = {
+    id: existingId || OrangeCrypto.uid(),
+    name,
+    role: document.getElementById('usr-role').value,
+    pinHash,
+    active: existing?.active !== false,
+    createdAt: existing?.createdAt || Date.now(),
+    lastLogin: existing?.lastLogin || null,
+  };
+  audit(existingId ? 'UPDATE_USER' : 'ADD_USER', { name, role: user.role });
+  Store.upsertUser(user);
+  hideModal('modal-user');
+  renderUsers();
+  toast(existingId ? 'User updated' : 'User added', 'success');
+});
+
+// Settings
+function loadSettings() {
+  const s = Store.getSettings();
+  document.getElementById('set-biz-name').value = s.bizName || '';
+  document.getElementById('set-biz-address').value = s.bizAddress || '';
+  document.getElementById('set-biz-phone').value = s.bizPhone || '';
+  document.getElementById('set-biz-tin').value = s.bizTin || '';
+  document.getElementById('set-receipt-footer').value = s.receiptFooter || '';
+  document.getElementById('set-tax-rate').value = s.taxRate ?? 12;
+  document.getElementById('set-prices-tax-incl').checked = s.pricesTaxInclusive !== false;
+  document.getElementById('set-currency').value = s.currency || '₱';
+  document.getElementById('set-low-stock-alert').checked = s.lowStockAlert !== false;
+  document.getElementById('set-low-stock-qty').value = s.lowStockQty || 5;
+}
+
+document.getElementById('btn-save-settings').addEventListener('click', () => {
+  const settings = {
+    bizName: document.getElementById('set-biz-name').value.trim(),
+    bizAddress: document.getElementById('set-biz-address').value.trim(),
+    bizPhone: document.getElementById('set-biz-phone').value.trim(),
+    bizTin: document.getElementById('set-biz-tin').value.trim(),
+    receiptFooter: document.getElementById('set-receipt-footer').value.trim(),
+    taxRate: parseFloat(document.getElementById('set-tax-rate').value) || 12,
+    pricesTaxInclusive: document.getElementById('set-prices-tax-incl').checked,
+    currency: document.getElementById('set-currency').value.trim() || '₱',
+    lowStockAlert: document.getElementById('set-low-stock-alert').checked,
+    lowStockQty: parseInt(document.getElementById('set-low-stock-qty').value) || 5,
+  };
+  Store.saveSettings(settings);
+  audit('UPDATE_SETTINGS', 'Settings updated');
+  toast('Settings saved', 'success');
+});
+
+// Categories
+function renderCategories() {
+  const cats = Store.getCategories();
+  const list = document.getElementById('categories-list');
+  list.innerHTML = cats.map(c => `
+    <div class="category-tag" data-cat-id="${c.id}">
+      ${escHtml(c.name)}
+      <button data-del-cat="${c.id}" title="Delete">&times;</button>
+    </div>`).join('');
+  list.querySelectorAll('[data-del-cat]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      // Check if category has products
+      const hasProducts = Store.getProducts().some(p => p.categoryId === btn.dataset.delCat);
+      if (hasProducts) { toast('Cannot delete: category has products', 'error'); return; }
+      if (await confirm('Delete Category', 'Delete this category?')) {
+        const cats = Store.getCategories().filter(c => c.id !== btn.dataset.delCat);
+        Store.saveCategories(cats);
+        renderCategories();
+        renderCategoryTabs();
+        toast('Category deleted');
+      }
+    });
+  });
+}
+
+document.getElementById('btn-add-category').addEventListener('click', () => {
+  const name = prompt('Category name:');
+  if (!name?.trim()) return;
+  const cats = Store.getCategories();
+  cats.push({ id: OrangeCrypto.uid(), name: name.trim() });
+  Store.saveCategories(cats);
+  renderCategories();
+  renderCategoryTabs();
+  renderProductGrid();
+  toast('Category added', 'success');
+});
+
+// Audit Log
+function renderAuditLog() {
+  const log = Store.getAuditLog();
+  const tbody = document.getElementById('audit-tbody');
+  tbody.innerHTML = log.slice(0, 200).map(e => `<tr>
+    <td style="white-space:nowrap">${fmtDate(e.ts)}</td>
+    <td>${escHtml(e.user)}</td>
+    <td><strong>${escHtml(e.action)}</strong></td>
+    <td style="font-size:0.8rem;color:var(--text-secondary)">${escHtml(e.details)}</td>
+  </tr>`).join('') || '<tr><td colspan="4" style="text-align:center;color:var(--text-muted);padding:2rem">No activity yet</td></tr>';
+}
+
+// Backup
+document.getElementById('btn-backup-export').addEventListener('click', () => {
+  const data = Store.exportAll();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `orangepos_backup_${new Date().toISOString().split('T')[0]}.json`;
+  a.click();
+  audit('BACKUP_EXPORT', 'Data exported');
+  toast('Backup downloaded', 'success');
+});
+
+document.getElementById('btn-backup-import').addEventListener('click', () => {
+  document.getElementById('backup-import-file').click();
+});
+
+document.getElementById('backup-import-file').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  if (!await confirm('Import Backup', 'This will replace ALL current data. Continue?')) {
+    e.target.value = ''; return;
+  }
+  const text = await file.text();
+  try {
+    const data = JSON.parse(text);
+    Store.importAll(data);
+    audit('BACKUP_IMPORT', 'Data imported from backup');
+    toast('Backup restored. Reloading...', 'success');
+    setTimeout(() => location.reload(), 1500);
+  } catch (err) {
+    toast('Invalid backup file: ' + err.message, 'error');
+  }
+  e.target.value = '';
+});
+
+document.getElementById('btn-clear-data').addEventListener('click', async () => {
+  if (!await confirm('⚠️ Clear All Data', 'This permanently deletes ALL orders, products, customers, and settings. This CANNOT be undone. Are you absolutely sure?')) return;
+  const pin = prompt('Enter your admin PIN to confirm:');
+  if (!pin) return;
+  const hash = await OrangeCrypto.hashPin(pin);
+  const user = Store.getUserByPin(hash);
+  if (!user || user.role !== 'admin') { toast('Invalid PIN or insufficient permissions', 'error'); return; }
+  Store.clearAll();
+  toast('All data cleared. Reloading...', 'warning');
+  setTimeout(() => location.reload(), 1500);
+});
+
+/* ============================
+   MODAL CLOSE BUTTONS
+   ============================ */
+document.querySelectorAll('.modal-close').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const targetId = btn.dataset.modal || btn.closest('.modal-overlay')?.id;
+    if (targetId) hideModal(targetId);
+  });
+});
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) hideModal(overlay.id);
+  });
+});
+
+/* ============================
+   BARCODE / KEYBOARD SHORTCUTS
+   ============================ */
+let barcodeBuffer = '';
+let barcodeTimer = null;
+document.addEventListener('keydown', (e) => {
+  // Skip if typing in an input
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+  if (e.key === 'Escape') {
+    document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
+    return;
+  }
+  // Barcode scanner: fast numeric input ending with Enter
+  if (/^\d$/.test(e.key)) {
+    barcodeBuffer += e.key;
+    clearTimeout(barcodeTimer);
+    barcodeTimer = setTimeout(() => { barcodeBuffer = ''; }, 100);
+  } else if (e.key === 'Enter' && barcodeBuffer.length >= 3) {
+    const barcode = barcodeBuffer;
+    barcodeBuffer = '';
+    const product = Store.getProducts().find(p => p.sku === barcode && p.active !== false);
+    if (product) {
+      addToCart(product.id);
+      toast(`Added: ${product.name}`, 'success');
+    } else {
+      toast(`Barcode not found: ${barcode}`, 'error');
+    }
+  } else {
+    barcodeBuffer = '';
+  }
+});
+
+/* ============================
+   INIT
+   ============================ */
+(async function init() {
+  await seedDefaultData();
+  await initAuth();
+  updateHeldBadge();
+})();

@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrangePOS</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟠</text></svg>">
+</head>
+<body class="loading">
+  <div id="app-root">
+    <!-- Login Screen -->
+    <div id="screen-login" class="screen active">
+      <div class="login-wrap">
+        <div class="login-logo">
+          <div class="logo-icon">⬡</div>
+          <h1>OrangePOS</h1>
+          <p>Point of Sale System</p>
+        </div>
+        <form id="form-login" class="login-form" autocomplete="off">
+          <div class="field">
+            <label for="login-pin">PIN</label>
+            <input type="password" id="login-pin" placeholder="Enter your PIN" maxlength="8" inputmode="numeric" autocomplete="off">
+          </div>
+          <div id="login-error" class="alert alert-danger hidden">Invalid PIN. Please try again.</div>
+          <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+        </form>
+        <div class="login-hint">
+          <span>Default Admin PIN: <code>1234</code></span>
+          <span>Cashier PIN: <code>5678</code></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main POS Screen -->
+    <div id="screen-pos" class="screen">
+      <div class="pos-layout">
+        <!-- Sidebar: Navigation -->
+        <nav class="pos-nav" id="pos-nav">
+          <div class="nav-logo">
+            <span class="nav-logo-icon">⬡</span>
+            <span class="nav-logo-text">OrangePOS</span>
+          </div>
+          <ul class="nav-links">
+            <li><a href="#" class="nav-link active" data-view="pos" title="Point of Sale">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <span>Register</span>
+            </a></li>
+            <li><a href="#" class="nav-link" data-view="orders" title="Orders">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h4"/></svg>
+              <span>Orders</span>
+            </a></li>
+            <li><a href="#" class="nav-link" data-view="inventory" title="Inventory">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
+              <span>Inventory</span>
+            </a></li>
+            <li><a href="#" class="nav-link" data-view="customers" title="Customers">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg>
+              <span>Customers</span>
+            </a></li>
+            <li><a href="#" class="nav-link" data-view="reports" title="Reports">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+              <span>Reports</span>
+            </a></li>
+            <li class="admin-only"><a href="#" class="nav-link" data-view="admin" title="Admin">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M2 12h2M20 12h2M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41"/></svg>
+              <span>Admin</span>
+            </a></li>
+          </ul>
+          <div class="nav-bottom">
+            <div class="nav-user" id="nav-user">
+              <div class="nav-user-avatar" id="nav-user-avatar">CA</div>
+              <div class="nav-user-info">
+                <span class="nav-user-name" id="nav-user-name">Cashier</span>
+                <span class="nav-user-role" id="nav-user-role">Cashier</span>
+              </div>
+            </div>
+            <button class="btn-icon" id="btn-lock" title="Lock terminal">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
+            </button>
+          </div>
+        </nav>
+
+        <!-- Main Content Area -->
+        <main class="pos-main">
+          <!-- POS View -->
+          <div id="view-pos" class="view active">
+            <div class="pos-register">
+              <!-- Product Panel -->
+              <div class="register-products">
+                <div class="register-toolbar">
+                  <div class="search-wrap">
+                    <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                    <input type="text" id="product-search" placeholder="Search products or scan barcode..." autocomplete="off">
+                  </div>
+                  <div class="category-tabs" id="category-tabs">
+                    <button class="cat-tab active" data-cat="all">All</button>
+                  </div>
+                </div>
+                <div class="product-grid" id="product-grid"></div>
+              </div>
+
+              <!-- Cart Panel -->
+              <div class="register-cart">
+                <div class="cart-header">
+                  <h2>Current Order</h2>
+                  <div class="cart-actions">
+                    <button class="btn-icon" id="btn-hold" title="Hold order">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 00-2-2v0a2 2 0 00-2 2v0M14 10V4a2 2 0 00-2-2v0a2 2 0 00-2 2v0M10 10.5V6a2 2 0 00-2-2v0a2 2 0 00-2 2v5"/><path d="M6 14v0a2 2 0 00-2 2v0c0 2.5 2 6 4 6h6c2.5 0 4-2 4-6v-5"/></svg>
+                    </button>
+                    <button class="btn-icon danger" id="btn-clear-cart" title="Clear cart">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="customer-select-bar">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                  <select id="cart-customer">
+                    <option value="">Walk-in Customer</option>
+                  </select>
+                </div>
+
+                <div class="cart-items" id="cart-items">
+                  <div class="cart-empty">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="48" height="48"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.68 13.39a2 2 0 001.99 1.61h9.72a2 2 0 001.99-1.61L23 6H6"/></svg>
+                    <p>Cart is empty</p>
+                    <span>Tap a product to add it</span>
+                  </div>
+                </div>
+
+                <div class="cart-totals">
+                  <div class="totals-row">
+                    <span>Subtotal</span>
+                    <span id="cart-subtotal">₱0.00</span>
+                  </div>
+                  <div class="totals-row">
+                    <span>Discount</span>
+                    <span id="cart-discount" class="discount-val">-₱0.00</span>
+                  </div>
+                  <div class="totals-row">
+                    <span>Tax (12% VAT)</span>
+                    <span id="cart-tax">₱0.00</span>
+                  </div>
+                  <div class="totals-row total-final">
+                    <span>Total</span>
+                    <span id="cart-total">₱0.00</span>
+                  </div>
+
+                  <div class="discount-controls">
+                    <label>Discount</label>
+                    <div class="discount-row">
+                      <select id="discount-type">
+                        <option value="none">None</option>
+                        <option value="percent">%</option>
+                        <option value="fixed">Fixed ₱</option>
+                        <option value="senior">Senior / PWD (20%)</option>
+                      </select>
+                      <input type="number" id="discount-value" placeholder="0" min="0" max="100">
+                    </div>
+                  </div>
+                </div>
+
+                <div class="cart-checkout">
+                  <button class="btn btn-secondary" id="btn-held-orders">
+                    Held Orders <span id="held-badge" class="badge hidden">0</span>
+                  </button>
+                  <button class="btn btn-primary" id="btn-checkout" disabled>
+                    Checkout →
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Orders View -->
+          <div id="view-orders" class="view">
+            <div class="view-header">
+              <h2>Orders</h2>
+              <div class="view-toolbar">
+                <input type="date" id="orders-date" class="input-sm">
+                <select id="orders-status" class="input-sm">
+                  <option value="">All Statuses</option>
+                  <option value="completed">Completed</option>
+                  <option value="refunded">Refunded</option>
+                  <option value="voided">Voided</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" id="btn-export-orders">Export CSV</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="orders-table">
+                <thead>
+                  <tr>
+                    <th>Order #</th>
+                    <th>Date / Time</th>
+                    <th>Cashier</th>
+                    <th>Customer</th>
+                    <th>Items</th>
+                    <th>Total</th>
+                    <th>Payment</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="orders-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Inventory View -->
+          <div id="view-inventory" class="view">
+            <div class="view-header">
+              <h2>Inventory</h2>
+              <div class="view-toolbar">
+                <input type="text" id="inventory-search" placeholder="Search products..." class="input-sm">
+                <select id="inventory-cat-filter" class="input-sm">
+                  <option value="">All Categories</option>
+                </select>
+                <button class="btn btn-primary btn-sm" id="btn-add-product">+ Add Product</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="inventory-table">
+                <thead>
+                  <tr>
+                    <th>SKU</th>
+                    <th>Name</th>
+                    <th>Category</th>
+                    <th>Price</th>
+                    <th>Cost</th>
+                    <th>Stock</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="inventory-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Customers View -->
+          <div id="view-customers" class="view">
+            <div class="view-header">
+              <h2>Customers</h2>
+              <div class="view-toolbar">
+                <input type="text" id="customer-search" placeholder="Search customers..." class="input-sm">
+                <button class="btn btn-primary btn-sm" id="btn-add-customer">+ Add Customer</button>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table class="data-table" id="customers-table">
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Phone</th>
+                    <th>Email</th>
+                    <th>Points</th>
+                    <th>Total Spent</th>
+                    <th>Visits</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody id="customers-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Reports View -->
+          <div id="view-reports" class="view">
+            <div class="view-header">
+              <h2>Reports</h2>
+              <div class="view-toolbar">
+                <select id="report-period" class="input-sm">
+                  <option value="today">Today</option>
+                  <option value="week">This Week</option>
+                  <option value="month" selected>This Month</option>
+                  <option value="year">This Year</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" id="btn-print-report">Print Report</button>
+              </div>
+            </div>
+            <div class="reports-grid">
+              <div class="stat-card">
+                <span class="stat-label">Total Revenue</span>
+                <span class="stat-value" id="rpt-revenue">₱0.00</span>
+                <span class="stat-sub" id="rpt-revenue-sub"></span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Orders</span>
+                <span class="stat-value" id="rpt-orders">0</span>
+                <span class="stat-sub" id="rpt-orders-sub"></span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Avg Order Value</span>
+                <span class="stat-value" id="rpt-avg">₱0.00</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Items Sold</span>
+                <span class="stat-value" id="rpt-items">0</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Tax Collected</span>
+                <span class="stat-value" id="rpt-tax">₱0.00</span>
+              </div>
+              <div class="stat-card">
+                <span class="stat-label">Net Profit</span>
+                <span class="stat-value" id="rpt-profit">₱0.00</span>
+              </div>
+            </div>
+            <div class="reports-section">
+              <h3>Top Selling Products</h3>
+              <div class="table-wrap">
+                <table class="data-table" id="top-products-table">
+                  <thead>
+                    <tr><th>Product</th><th>Qty Sold</th><th>Revenue</th></tr>
+                  </thead>
+                  <tbody id="top-products-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+            <div class="reports-section">
+              <h3>Payment Methods Breakdown</h3>
+              <div id="payment-breakdown"></div>
+            </div>
+          </div>
+
+          <!-- Admin View -->
+          <div id="view-admin" class="view admin-only-view">
+            <div class="view-header">
+              <h2>Admin Panel</h2>
+            </div>
+            <div class="admin-tabs">
+              <button class="admin-tab active" data-tab="users">Users</button>
+              <button class="admin-tab" data-tab="settings">Settings</button>
+              <button class="admin-tab" data-tab="categories">Categories</button>
+              <button class="admin-tab" data-tab="audit">Audit Log</button>
+              <button class="admin-tab" data-tab="backup">Backup</button>
+            </div>
+
+            <!-- Users Tab -->
+            <div class="admin-panel active" id="admin-users">
+              <div class="panel-toolbar">
+                <h3>Users</h3>
+                <button class="btn btn-primary btn-sm" id="btn-add-user">+ Add User</button>
+              </div>
+              <div class="table-wrap">
+                <table class="data-table" id="users-table">
+                  <thead>
+                    <tr><th>Name</th><th>Role</th><th>Last Login</th><th>Status</th><th>Actions</th></tr>
+                  </thead>
+                  <tbody id="users-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Settings Tab -->
+            <div class="admin-panel" id="admin-settings">
+              <h3>Business Settings</h3>
+              <div class="settings-form">
+                <div class="settings-group">
+                  <h4>Business Information</h4>
+                  <div class="field">
+                    <label>Business Name</label>
+                    <input type="text" id="set-biz-name" class="input-full">
+                  </div>
+                  <div class="field">
+                    <label>Address</label>
+                    <input type="text" id="set-biz-address" class="input-full">
+                  </div>
+                  <div class="field">
+                    <label>Phone</label>
+                    <input type="text" id="set-biz-phone" class="input-full">
+                  </div>
+                  <div class="field">
+                    <label>TIN (Tax ID)</label>
+                    <input type="text" id="set-biz-tin" class="input-full">
+                  </div>
+                  <div class="field">
+                    <label>Receipt Footer Message</label>
+                    <textarea id="set-receipt-footer" rows="2" class="input-full"></textarea>
+                  </div>
+                </div>
+                <div class="settings-group">
+                  <h4>Tax &amp; Pricing</h4>
+                  <div class="field">
+                    <label>VAT Rate (%)</label>
+                    <input type="number" id="set-tax-rate" class="input-sm" min="0" max="30">
+                  </div>
+                  <div class="field checkbox-field">
+                    <input type="checkbox" id="set-prices-tax-incl">
+                    <label for="set-prices-tax-incl">Prices are tax-inclusive</label>
+                  </div>
+                </div>
+                <div class="settings-group">
+                  <h4>System</h4>
+                  <div class="field">
+                    <label>Currency Symbol</label>
+                    <input type="text" id="set-currency" class="input-sm" maxlength="3">
+                  </div>
+                  <div class="field checkbox-field">
+                    <input type="checkbox" id="set-low-stock-alert">
+                    <label for="set-low-stock-alert">Enable low stock alerts</label>
+                  </div>
+                  <div class="field">
+                    <label>Low Stock Threshold</label>
+                    <input type="number" id="set-low-stock-qty" class="input-sm" min="1">
+                  </div>
+                </div>
+                <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
+              </div>
+            </div>
+
+            <!-- Categories Tab -->
+            <div class="admin-panel" id="admin-categories">
+              <div class="panel-toolbar">
+                <h3>Categories</h3>
+                <button class="btn btn-primary btn-sm" id="btn-add-category">+ Add Category</button>
+              </div>
+              <div id="categories-list" class="tag-list"></div>
+            </div>
+
+            <!-- Audit Log Tab -->
+            <div class="admin-panel" id="admin-audit">
+              <h3>Audit Log</h3>
+              <div class="table-wrap">
+                <table class="data-table" id="audit-table">
+                  <thead>
+                    <tr><th>Time</th><th>User</th><th>Action</th><th>Details</th></tr>
+                  </thead>
+                  <tbody id="audit-tbody"></tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Backup Tab -->
+            <div class="admin-panel" id="admin-backup">
+              <h3>Data Backup &amp; Restore</h3>
+              <div class="backup-actions">
+                <div class="backup-card">
+                  <h4>Export Data</h4>
+                  <p>Download all data as a JSON backup file.</p>
+                  <button class="btn btn-primary" id="btn-backup-export">Download Backup</button>
+                </div>
+                <div class="backup-card">
+                  <h4>Import Data</h4>
+                  <p>Restore from a previous backup. This will replace all current data.</p>
+                  <input type="file" id="backup-import-file" accept=".json" style="display:none">
+                  <button class="btn btn-secondary" id="btn-backup-import">Upload Backup</button>
+                </div>
+                <div class="backup-card danger">
+                  <h4>Clear All Data</h4>
+                  <p>Permanently delete all orders, customers, and settings. Cannot be undone.</p>
+                  <button class="btn btn-danger" id="btn-clear-data">Clear All Data</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MODALS ===== -->
+
+  <!-- Checkout Modal -->
+  <div id="modal-checkout" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3>Checkout</h3>
+        <button class="btn-icon modal-close" data-modal="modal-checkout">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="checkout-summary">
+          <div class="checkout-line"><span>Subtotal</span><span id="co-subtotal"></span></div>
+          <div class="checkout-line"><span>Discount</span><span id="co-discount"></span></div>
+          <div class="checkout-line"><span>Tax</span><span id="co-tax"></span></div>
+          <div class="checkout-line checkout-total"><span>Total</span><span id="co-total"></span></div>
+        </div>
+        <div class="payment-methods">
+          <h4>Payment Method</h4>
+          <div class="pay-method-grid">
+            <button class="pay-method active" data-method="cash">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/></svg>
+              Cash
+            </button>
+            <button class="pay-method" data-method="card">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="5" width="20" height="14" rx="2"/><line x1="2" y1="10" x2="22" y2="10"/></svg>
+              Card
+            </button>
+            <button class="pay-method" data-method="gcash">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+              GCash
+            </button>
+            <button class="pay-method" data-method="maya">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+              Maya
+            </button>
+            <button class="pay-method" data-method="split">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+              Split
+            </button>
+          </div>
+        </div>
+        <div id="cash-tendered-wrap" class="cash-tendered">
+          <label>Cash Tendered</label>
+          <input type="number" id="cash-tendered" placeholder="0.00" min="0" step="0.01">
+          <div class="quick-cash">
+            <button class="btn btn-secondary btn-sm quick-cash-btn" data-amount="exact">Exact</button>
+            <button class="btn btn-secondary btn-sm quick-cash-btn" data-amount="100">₱100</button>
+            <button class="btn btn-secondary btn-sm quick-cash-btn" data-amount="200">₱200</button>
+            <button class="btn btn-secondary btn-sm quick-cash-btn" data-amount="500">₱500</button>
+            <button class="btn btn-secondary btn-sm quick-cash-btn" data-amount="1000">₱1,000</button>
+          </div>
+          <div class="change-display">
+            <span>Change</span>
+            <span id="cash-change" class="change-amount">₱0.00</span>
+          </div>
+        </div>
+        <div id="split-payment-wrap" class="split-payment hidden">
+          <div class="split-row">
+            <select id="split1-method" class="input-sm"><option value="cash">Cash</option><option value="card">Card</option><option value="gcash">GCash</option></select>
+            <input type="number" id="split1-amount" placeholder="Amount" class="input-sm">
+          </div>
+          <div class="split-row">
+            <select id="split2-method" class="input-sm"><option value="card">Card</option><option value="cash">Cash</option><option value="gcash">GCash</option></select>
+            <input type="number" id="split2-amount" placeholder="Amount" class="input-sm">
+          </div>
+          <span class="split-remaining">Remaining: <strong id="split-remaining">₱0.00</strong></span>
+        </div>
+        <div class="checkout-note">
+          <label>Note (optional)</label>
+          <input type="text" id="checkout-note" placeholder="Order note...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-checkout">Cancel</button>
+        <button class="btn btn-primary btn-lg" id="btn-complete-sale">Complete Sale</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Receipt Modal -->
+  <div id="modal-receipt" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Receipt</h3>
+        <button class="btn-icon modal-close" data-modal="modal-receipt">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="receipt-content" class="receipt"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="btn-print-receipt">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 01-2-2v-5a2 2 0 012-2h16a2 2 0 012 2v5a2 2 0 01-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+          Print
+        </button>
+        <button class="btn btn-primary modal-close" data-modal="modal-receipt" id="btn-new-sale">New Sale</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Product Modal -->
+  <div id="modal-product" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="product-modal-title">Add Product</h3>
+        <button class="btn-icon modal-close" data-modal="modal-product">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="product-edit-id">
+        <div class="form-grid">
+          <div class="field">
+            <label>Product Name *</label>
+            <input type="text" id="prd-name" class="input-full" required>
+          </div>
+          <div class="field">
+            <label>SKU / Barcode</label>
+            <input type="text" id="prd-sku" class="input-full">
+          </div>
+          <div class="field">
+            <label>Category *</label>
+            <select id="prd-category" class="input-full"></select>
+          </div>
+          <div class="field">
+            <label>Selling Price *</label>
+            <input type="number" id="prd-price" class="input-full" min="0" step="0.01">
+          </div>
+          <div class="field">
+            <label>Cost Price</label>
+            <input type="number" id="prd-cost" class="input-full" min="0" step="0.01">
+          </div>
+          <div class="field">
+            <label>Stock Quantity *</label>
+            <input type="number" id="prd-stock" class="input-full" min="0">
+          </div>
+          <div class="field">
+            <label>Unit</label>
+            <input type="text" id="prd-unit" class="input-full" placeholder="pcs, kg, L...">
+          </div>
+          <div class="field checkbox-field">
+            <input type="checkbox" id="prd-track-stock" checked>
+            <label for="prd-track-stock">Track stock</label>
+          </div>
+          <div class="field checkbox-field">
+            <input type="checkbox" id="prd-active" checked>
+            <label for="prd-active">Active (visible in POS)</label>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-product">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-product">Save Product</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Customer Modal -->
+  <div id="modal-customer" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3 id="customer-modal-title">Add Customer</h3>
+        <button class="btn-icon modal-close" data-modal="modal-customer">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="customer-edit-id">
+        <div class="field">
+          <label>Full Name *</label>
+          <input type="text" id="cust-name" class="input-full">
+        </div>
+        <div class="field">
+          <label>Phone</label>
+          <input type="tel" id="cust-phone" class="input-full">
+        </div>
+        <div class="field">
+          <label>Email</label>
+          <input type="email" id="cust-email" class="input-full">
+        </div>
+        <div class="field">
+          <label>Address</label>
+          <input type="text" id="cust-address" class="input-full">
+        </div>
+        <div class="field checkbox-field">
+          <input type="checkbox" id="cust-senior">
+          <label for="cust-senior">Senior Citizen / PWD</label>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-customer">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-customer">Save Customer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- User Modal -->
+  <div id="modal-user" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3 id="user-modal-title">Add User</h3>
+        <button class="btn-icon modal-close" data-modal="modal-user">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="user-edit-id">
+        <div class="field">
+          <label>Full Name *</label>
+          <input type="text" id="usr-name" class="input-full">
+        </div>
+        <div class="field">
+          <label>Role *</label>
+          <select id="usr-role" class="input-full">
+            <option value="cashier">Cashier</option>
+            <option value="admin">Admin</option>
+            <option value="manager">Manager</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>PIN (4–8 digits) *</label>
+          <input type="password" id="usr-pin" class="input-full" maxlength="8" inputmode="numeric">
+        </div>
+        <div class="field">
+          <label>Confirm PIN *</label>
+          <input type="password" id="usr-pin-confirm" class="input-full" maxlength="8" inputmode="numeric">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-user">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-user">Save User</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Order Detail Modal -->
+  <div id="modal-order" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Order Details</h3>
+        <button class="btn-icon modal-close" data-modal="modal-order">&times;</button>
+      </div>
+      <div class="modal-body" id="order-detail-body"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-order">Close</button>
+        <button class="btn btn-warning" id="btn-refund-order">Refund</button>
+        <button class="btn btn-secondary" id="btn-reprint-receipt">Reprint</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Held Orders Modal -->
+  <div id="modal-held" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3>Held Orders</h3>
+        <button class="btn-icon modal-close" data-modal="modal-held">&times;</button>
+      </div>
+      <div class="modal-body" id="held-orders-list"></div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-held">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Confirm Modal -->
+  <div id="modal-confirm" class="modal-overlay hidden">
+    <div class="modal modal-xs">
+      <div class="modal-header">
+        <h3 id="confirm-title">Confirm</h3>
+      </div>
+      <div class="modal-body">
+        <p id="confirm-message"></p>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="confirm-cancel">Cancel</button>
+        <button class="btn btn-danger" id="confirm-ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div id="toast-container"></div>
+
+  <!-- Print Styles are loaded separately -->
+  <script src="js/crypto.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
