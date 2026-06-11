@@ -12,10 +12,21 @@ const App = {
   discount: { type: 'none', value: 0 },
   selectedCustomerId: null,
   currentView: 'pos',
-  currentOrderId: null, // for detail modal
+  currentOrderId: null,
+  pricingMode: 'retail', // 'retail' | 'wholesale'
 };
 
 const TAX_RATE_DEFAULT = 12;
+
+/* Returns the effective price for a product given current pricing mode */
+function getActivePrice(product) {
+  const s = Store.getSettings();
+  if (App.pricingMode === 'wholesale' && s.wholesaleEnabled) {
+    const disc = (s.wholesaleDiscount || 0) / 100;
+    return Math.round(product.price * (1 - disc) * 100) / 100;
+  }
+  return product.price;
+}
 
 /* ============================
    UTILITIES
@@ -185,6 +196,7 @@ function enterPOS() {
   loadCurrentView('pos');
   setTimeout(maintainSearchFocus, 100);
   setTimeout(checkLowStockAlerts, 200);
+  setTimeout(updatePricingToggleUI, 50);
 }
 
 function showScreen(id) {
@@ -223,6 +235,7 @@ function loadCurrentView(view) {
   if (view === 'customers') renderCustomers();
   if (view === 'reports') renderReports();
   if (view === 'admin') renderAdmin();
+  if (view === 'zreport') renderZReport();
 }
 
 function capitalizeFirst(str) { return str ? str[0].toUpperCase() + str.slice(1) : ''; }
@@ -267,15 +280,27 @@ function renderProductGrid() {
     return;
   }
   const lowQty = settings.lowStockQty || 5;
+  const showWholesale = settings.wholesaleEnabled;
+  const wholesaleDisc = (settings.wholesaleDiscount || 0) / 100;
+
   grid.innerHTML = products.map(p => {
     const outOfStock = p.trackStock !== false && p.stock <= 0;
     const lowStock = p.trackStock !== false && p.stock > 0 && p.stock <= lowQty;
     const extraClass = outOfStock ? 'out-of-stock' : lowStock ? 'low-stock-card' : '';
     const stockLabel = p.trackStock === false ? '' : `<span class="product-stock ${outOfStock ? 'out' : lowStock ? 'low' : ''}">${outOfStock ? 'Out of stock' : `${p.stock} ${p.unit || 'pcs'}`}</span>`;
+    const wsPrice = Math.round(p.price * (1 - wholesaleDisc) * 100) / 100;
+    const isWholesaleActive = App.pricingMode === 'wholesale' && showWholesale;
+    const displayPrice = isWholesaleActive ? wsPrice : p.price;
+    const priceHtml = showWholesale
+      ? `<div class="product-price ${isWholesaleActive ? 'ws-active' : ''}">${fmt(displayPrice)}</div>
+         <div class="product-price-sub">${isWholesaleActive
+           ? `<span class="price-label-small retail-sub">Retail ${fmt(p.price)}</span>`
+           : `<span class="price-label-small ws-sub">WS ${fmt(wsPrice)}</span>`}</div>`
+      : `<div class="product-price">${fmt(p.price)}</div>`;
     return `
       <div class="product-card ${extraClass}" data-id="${p.id}">
         <div class="product-name">${escHtml(p.name)}</div>
-        <div class="product-price">${fmt(p.price)}</div>
+        ${priceHtml}
         ${stockLabel}
       </div>`;
   }).join('');
@@ -295,17 +320,59 @@ document.getElementById('product-search').addEventListener('input', (e) => {
 function addToCart(productId) {
   const product = Store.getProducts().find(p => p.id === productId);
   if (!product) return;
+  const activePrice = getActivePrice(product);
   const existing = App.cart.find(i => i.productId === productId);
   if (existing) {
     if (product.trackStock !== false && existing.qty >= product.stock) {
       toast('Not enough stock', 'error'); return;
     }
     existing.qty++;
+    // Update price in case mode changed
+    existing.price = activePrice;
   } else {
-    App.cart.push({ productId, name: product.name, price: product.price, qty: 1 });
+    App.cart.push({ productId, name: product.name, price: activePrice, qty: 1 });
   }
   renderCart();
   renderProductGrid();
+}
+
+function setPricingMode(mode) {
+  App.pricingMode = mode;
+  const s = Store.getSettings();
+  // Re-price every item already in cart
+  const products = Store.getProducts();
+  App.cart.forEach(item => {
+    const product = products.find(p => p.id === item.productId);
+    if (product) item.price = getActivePrice(product);
+  });
+  renderCart();
+  renderProductGrid();
+  updatePricingToggleUI();
+  const label = mode === 'wholesale' ? (s.wholesaleLabel || 'Wholesale') : (s.retailLabel || 'Retail');
+  toast(`Switched to ${label} pricing`, mode === 'wholesale' ? 'warning' : 'success');
+  audit('PRICING_MODE', `Switched to ${mode}`);
+}
+
+function updatePricingToggleUI() {
+  const s = Store.getSettings();
+  const isWholesale = App.pricingMode === 'wholesale';
+  const retailBtn  = document.getElementById('pricing-btn-retail');
+  const wholesale  = document.getElementById('pricing-btn-wholesale');
+  const indicator  = document.getElementById('pricing-mode-indicator');
+  if (!retailBtn) return;
+  retailBtn.classList.toggle('active', !isWholesale);
+  wholesale.classList.toggle('active', isWholesale);
+  retailBtn.textContent = s.retailLabel || 'Retail';
+  wholesale.textContent = `${s.wholesaleLabel || 'Wholesale'} (−${s.wholesaleDiscount || 0}%)`;
+  if (indicator) {
+    indicator.textContent = isWholesale
+      ? `${s.wholesaleLabel || 'Wholesale'} −${s.wholesaleDiscount || 0}%`
+      : (s.retailLabel || 'Retail');
+    indicator.className = 'pricing-indicator ' + (isWholesale ? 'wholesale' : 'retail');
+  }
+  // Show/hide wholesale toggle based on settings
+  const wrap = document.getElementById('pricing-toggle-wrap');
+  if (wrap) wrap.style.display = s.wholesaleEnabled ? '' : 'none';
 }
 
 function removeFromCart(productId) {
@@ -367,7 +434,7 @@ function renderCart() {
       <div class="cart-item">
         <div class="cart-item-num">${idx + 1}</div>
         <div class="cart-item-info">
-          <div class="cart-item-name" title="${escHtml(item.name)}">${escHtml(item.name)}</div>
+          <div class="cart-item-name" title="${escHtml(item.name)}">${escHtml(item.name)}${item.priceOverride ? ' <span class="override-badge">Override</span>' : ''}</div>
           <div class="cart-item-price">${fmt(item.price)} × ${item.qty} = <strong>${fmt(item.price * item.qty)}</strong></div>
         </div>
         <div class="cart-item-controls">
@@ -376,6 +443,9 @@ function renderCart() {
             onfocus="window._qtyFocused=true" onblur="window._qtyFocused=false">
           <button class="qty-btn" data-action="inc" data-id="${item.productId}">+</button>
         </div>
+        <button class="cart-item-override btn-icon" data-id="${item.productId}" title="Override price">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        </button>
         <button class="cart-item-remove" data-id="${item.productId}" title="Remove">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
         </button>
@@ -403,6 +473,9 @@ function renderCart() {
     el.querySelectorAll('.cart-item-remove').forEach(btn => {
       btn.addEventListener('click', () => removeFromCart(btn.dataset.id));
     });
+    el.querySelectorAll('.cart-item-override').forEach(btn => {
+      btn.addEventListener('click', () => openPriceOverride(btn.dataset.id));
+    });
     document.getElementById('btn-checkout').disabled = false;
   }
 
@@ -419,6 +492,7 @@ function clearCart() {
   App.selectedCustomerId = null;
   document.getElementById('discount-type').value = 'none';
   document.getElementById('discount-value').value = '';
+  document.getElementById('discount-value').disabled = true;
   document.getElementById('cart-customer').value = '';
   renderCart();
   renderProductGrid();
@@ -443,14 +517,35 @@ document.getElementById('discount-value').addEventListener('input', (e) => {
 });
 document.getElementById('cart-customer').addEventListener('change', (e) => {
   App.selectedCustomerId = e.target.value || null;
-  // Auto-apply senior discount if customer is senior
-  if (App.selectedCustomerId) {
+
+  if (!App.selectedCustomerId) {
+    // Switched to Walk-in — remove senior discount if it was auto-applied
+    if (App.discount.type === 'senior') {
+      App.discount = { type: 'none', value: 0 };
+      document.getElementById('discount-type').value = 'none';
+      document.getElementById('discount-value').value = '';
+      document.getElementById('discount-value').disabled = true;
+      renderCart();
+    }
+  } else {
     const c = Store.getCustomers().find(x => x.id === App.selectedCustomerId);
     if (c?.senior) {
+      // Senior customer — auto-apply discount
       document.getElementById('discount-type').value = 'senior';
+      document.getElementById('discount-value').value = '20';
+      document.getElementById('discount-value').disabled = true;
       App.discount = { type: 'senior', value: 20 };
       renderCart();
       toast('Senior/PWD discount applied', 'success');
+    } else {
+      // Non-senior customer — remove senior discount if previously set
+      if (App.discount.type === 'senior') {
+        App.discount = { type: 'none', value: 0 };
+        document.getElementById('discount-type').value = 'none';
+        document.getElementById('discount-value').value = '';
+        document.getElementById('discount-value').disabled = true;
+        renderCart();
+      }
     }
   }
 });
@@ -622,6 +717,7 @@ async function completeSale() {
     taxAmt,
     total,
     paymentMethod: method,
+    pricingMode: App.pricingMode,
     cashTendered: method === 'cash' ? parseFloat(document.getElementById('cash-tendered').value) || 0 : total,
     paymentRef: (method === 'gcash' || method === 'maya') ? document.getElementById('ewallet-ref').value.trim() : '',
     cardLast4: method === 'card' ? document.getElementById('card-last4').value.trim() : '',
@@ -631,8 +727,6 @@ async function completeSale() {
 
   Store.addOrder(order);
   Store.decrementStock(App.cart);
-
-  // Update customer stats
   if (App.selectedCustomerId) {
     const points = Math.floor(total / 100); // 1 point per ₱100
     Store.updateCustomerStats(App.selectedCustomerId, total, points);
@@ -642,8 +736,6 @@ async function completeSale() {
 
   hideModal('modal-checkout');
   showReceipt(order);
-
-  const cartCopy = [...App.cart];
   clearCart();
   renderProductGrid();
   updateHeldBadge();
@@ -670,13 +762,14 @@ function showReceipt(order) {
     <div class="receipt-row"><span>Date</span><span>${fmtDate(order.createdAt)}</span></div>
     <div class="receipt-row"><span>Cashier</span><span>${escHtml(order.cashierName)}</span></div>
     ${customer ? `<div class="receipt-row"><span>Customer</span><span>${escHtml(customer.name)}</span></div>` : ''}
+    ${order.pricingMode === 'wholesale' ? `<div class="receipt-row"><span>Pricing</span><span>${escHtml(Store.getSettings().wholesaleLabel || 'Wholesale')}</span></div>` : ''}
     <div class="receipt-divider"></div>
     ${order.items.map(i => `
       <div class="receipt-row">
         <span>${escHtml(i.name)}</span>
         <span>${fmt(i.price * i.qty)}</span>
       </div>
-      <div style="font-size:0.75rem;color:var(--text-muted);padding-left:8px">${i.qty} × ${fmt(i.price)}</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);padding-left:8px">${i.qty} × ${fmt(i.price)}${i.priceOverride ? ` (Override)` : ''}</div>
     `).join('')}
     <div class="receipt-divider"></div>
     <div class="receipt-row"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
@@ -751,46 +844,89 @@ function openOrderDetail(orderId) {
   if (!order) return;
   App.currentOrderId = orderId;
   const customer = order.customerId ? Store.getCustomers().find(c => c.id === order.customerId) : null;
+  const today = new Date().toDateString();
+  const orderDay = new Date(order.createdAt).toDateString();
+  const sameDay = today === orderDay;
+
   document.getElementById('order-detail-body').innerHTML = `
     <div class="checkout-summary">
       <div class="checkout-line"><span>Order #</span><strong>${escHtml(order.orderNum)}</strong></div>
       <div class="checkout-line"><span>Date</span><span>${fmtDate(order.createdAt)}</span></div>
       <div class="checkout-line"><span>Cashier</span><span>${escHtml(order.cashierName)}</span></div>
       <div class="checkout-line"><span>Customer</span><span>${customer ? escHtml(customer.name) : 'Walk-in'}</span></div>
-      <div class="checkout-line"><span>Payment</span><span>${escHtml(order.paymentMethod)}</span></div>
+      <div class="checkout-line"><span>Payment</span><span style="text-transform:capitalize">${escHtml(order.paymentMethod)}</span></div>
+      ${order.paymentRef ? `<div class="checkout-line"><span>Ref #</span><span>${escHtml(order.paymentRef)}</span></div>` : ''}
+      ${order.cardLast4 ? `<div class="checkout-line"><span>Card</span><span>**** ${escHtml(order.cardLast4)}</span></div>` : ''}
       <div class="checkout-line"><span>Status</span><span class="status-badge status-${order.status}">${capitalizeFirst(order.status)}</span></div>
+      ${order.voidedBy ? `<div class="checkout-line"><span>Voided by</span><span>${escHtml(order.voidedBy)} — ${fmtDate(order.voidedAt)}</span></div>` : ''}
+      ${order.refundedBy ? `<div class="checkout-line"><span>Refunded by</span><span>${escHtml(order.refundedBy)} — ${fmtDate(order.refundedAt)}</span></div>` : ''}
+      ${order.note ? `<div class="checkout-line"><span>Note</span><span>${escHtml(order.note)}</span></div>` : ''}
     </div>
     <table class="data-table" style="margin:1rem 0">
-      <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th></tr></thead>
+      <thead><tr><th>Item</th><th>Qty</th><th>Price</th><th>Total</th><th>Note</th></tr></thead>
       <tbody>${order.items.map(i => `<tr>
         <td>${escHtml(i.name)}</td>
         <td>${i.qty}</td>
-        <td>${fmt(i.price)}</td>
+        <td>${fmt(i.price)}${i.priceOverride ? ` <span class="override-badge" title="Overridden from ${fmt(i.originalPrice)}">Override</span>` : ''}</td>
         <td>${fmt(i.price * i.qty)}</td>
+        <td style="font-size:0.78rem;color:var(--text-muted)">${i.overrideReason ? escHtml(i.overrideReason) : ''}</td>
       </tr>`).join('')}</tbody>
     </table>
     <div class="checkout-summary">
       <div class="checkout-line"><span>Subtotal</span><span>${fmt(order.subtotal)}</span></div>
-      ${order.discountAmt > 0 ? `<div class="checkout-line"><span>Discount</span><span>-${fmt(order.discountAmt)}</span></div>` : ''}
-      <div class="checkout-line"><span>Tax</span><span>${fmt(order.taxAmt)}</span></div>
+      ${order.discountAmt > 0 ? `<div class="checkout-line"><span>Discount (${order.discountType})</span><span>-${fmt(order.discountAmt)}</span></div>` : ''}
+      <div class="checkout-line"><span>VAT</span><span>${fmt(order.taxAmt)}</span></div>
       <div class="checkout-line checkout-total"><span>Total</span><span>${fmt(order.total)}</span></div>
+      ${order.paymentMethod === 'cash' ? `<div class="checkout-line"><span>Tendered</span><span>${fmt(order.cashTendered)}</span></div>
+      <div class="checkout-line"><span>Change</span><span>${fmt(Math.max(0, order.cashTendered - order.total))}</span></div>` : ''}
     </div>
   `;
-  document.getElementById('btn-refund-order').style.display = order.status === 'completed' ? '' : 'none';
+
+  const isCompleted = order.status === 'completed';
+  document.getElementById('btn-void-order').style.display = isCompleted ? '' : 'none';
+  document.getElementById('btn-refund-order').style.display = isCompleted ? '' : 'none';
+  // Void only available same-day or to managers
+  if (isCompleted && !sameDay && App.currentUser?.role === 'cashier') {
+    document.getElementById('btn-void-order').style.display = 'none';
+  }
   showModal('modal-order');
 }
 
 document.getElementById('btn-refund-order').addEventListener('click', async () => {
   if (App.currentUser?.role === 'cashier') { toast('Refunds require manager/admin access', 'error'); return; }
-  if (await confirm('Refund Order', 'Mark this order as refunded and restore stock?')) {
-    const order = Store.getOrders().find(o => o.id === App.currentOrderId);
-    if (!order) return;
-    Store.updateOrderStatus(App.currentOrderId, 'refunded');
+  const order = Store.getOrders().find(o => o.id === App.currentOrderId);
+  if (!order || order.status !== 'completed') { toast('Only completed orders can be refunded', 'error'); return; }
+  if (await confirm('Refund Order', `Refund order ${order.orderNum} (${fmt(order.total)})? Stock will be restored and a refund record created.`)) {
+    Store.updateOrderStatus(App.currentOrderId, 'refunded', { refundedAt: Date.now(), refundedBy: App.currentUser.name });
     Store.incrementStock(order.items);
-    audit('REFUND', { orderNum: order.orderNum, total: fmt(order.total) });
+    audit('REFUND', { orderNum: order.orderNum, total: fmt(order.total), by: App.currentUser.name });
     hideModal('modal-order');
     renderOrders();
-    toast('Order refunded', 'success');
+    toast('Order refunded — stock restored', 'success');
+  }
+});
+
+document.getElementById('btn-void-order').addEventListener('click', async () => {
+  const order = Store.getOrders().find(o => o.id === App.currentOrderId);
+  if (!order) return;
+  if (order.status !== 'completed') { toast('Only completed orders can be voided', 'error'); return; }
+
+  // Void = same-day cancellation, requires manager PIN
+  const today = new Date();
+  const orderDay = new Date(order.createdAt);
+  const sameDay = today.toDateString() === orderDay.toDateString();
+
+  if (!sameDay && App.currentUser?.role === 'cashier') {
+    toast('Voids after the sales day require manager access', 'error'); return;
+  }
+
+  if (await confirm('Void Order', `Void order ${order.orderNum}? This cancels the transaction. Stock will be restored. Void is recorded in audit log.`)) {
+    Store.updateOrderStatus(App.currentOrderId, 'voided', { voidedAt: Date.now(), voidedBy: App.currentUser.name });
+    Store.incrementStock(order.items);
+    audit('VOID', { orderNum: order.orderNum, total: fmt(order.total), by: App.currentUser.name, sameDay });
+    hideModal('modal-order');
+    renderOrders();
+    toast('Order voided — stock restored', 'warning');
   }
 });
 
@@ -824,16 +960,19 @@ function downloadCSV(rows, filename) {
    ============================ */
 function renderInventory() {
   const search = document.getElementById('inventory-search').value.toLowerCase();
-  const catFilter = document.getElementById('inventory-cat-filter').value;
   const settings = Store.getSettings();
   const lowQty = settings.lowStockQty || 5;
 
-  // Populate category filter
+  // Populate category filter — read value BEFORE rebuilding
   const catSel = document.getElementById('inventory-cat-filter');
-  const currentCatFilter = catSel.value;
+  const catFilter = catSel.value; // capture before innerHTML wipe
   catSel.innerHTML = '<option value="">All Categories</option>';
   Store.getCategories().forEach(c => {
-    catSel.innerHTML += `<option value="${c.id}" ${currentCatFilter === c.id ? 'selected' : ''}>${escHtml(c.name)}</option>`;
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    opt.selected = catFilter === c.id;
+    catSel.appendChild(opt);
   });
 
   let products = Store.getProducts();
@@ -857,10 +996,14 @@ function renderInventory() {
       <td>${cat ? escHtml(cat.name) : '—'}</td>
       <td>${fmt(p.price)}</td>
       <td>${fmt(p.cost || 0)}</td>
-      <td><span class="${stockStatus}">${p.trackStock === false ? '∞' : p.stock}</span></td>
+      <td>
+        <span class="${stockStatus}">${p.trackStock === false ? '∞' : p.stock}</span>
+        ${p.trackStock !== false ? `<button class="btn btn-sm stock-adjust-inline" data-stock-id="${p.id}" title="Adjust stock" style="margin-left:6px">+/−</button>` : ''}
+      </td>
       <td><span class="status-badge ${p.active !== false ? 'status-active' : 'status-inactive'}">${p.active !== false ? 'Active' : 'Inactive'}</span></td>
-      <td style="display:flex;gap:4px">
+      <td style="display:flex;gap:4px;flex-wrap:wrap">
         <button class="btn btn-secondary btn-sm" data-edit-product="${p.id}">Edit</button>
+        <button class="btn btn-secondary btn-sm" data-history-product="${p.id}" title="Stock history">History</button>
         <button class="btn btn-sm" style="border-color:var(--danger);color:var(--danger)" data-del-product="${p.id}">Del</button>
       </td>
     </tr>`;
@@ -878,6 +1021,12 @@ function renderInventory() {
         toast('Product deleted');
       }
     });
+  });
+  tbody.querySelectorAll('[data-stock-id]').forEach(btn => {
+    btn.addEventListener('click', () => openStockModal(btn.dataset.stockId));
+  });
+  tbody.querySelectorAll('[data-history-product]').forEach(btn => {
+    btn.addEventListener('click', () => openStockHistory(btn.dataset.historyProduct));
   });
 }
 
@@ -933,12 +1082,404 @@ document.getElementById('btn-save-product').addEventListener('click', () => {
   renderInventory();
   renderCategoryTabs();
   renderProductGrid();
+  checkLowStockAlerts();
   toast(existingId ? 'Product updated' : 'Product added', 'success');
 });
 
 /* ============================
-   CUSTOMERS VIEW
+   STOCK ADJUSTMENT
    ============================ */
+let _stockAdjType = 'add';
+
+function openStockModal(productId) {
+  const p = Store.getProducts().find(x => x.id === productId);
+  if (!p) return;
+  document.getElementById('stock-product-id').value = productId;
+  document.getElementById('stock-modal-title').textContent = `Adjust Stock — ${p.name}`;
+  document.getElementById('stock-product-info').innerHTML = `
+    <div class="stock-info-row">
+      <span>Current Stock:</span>
+      <strong id="stock-current-val">${p.stock} ${p.unit || 'pcs'}</strong>
+    </div>`;
+  document.getElementById('stock-qty').value = '';
+  document.getElementById('stock-reason').value = '';
+  document.getElementById('stock-notes').value = '';
+  document.getElementById('stock-result-preview').innerHTML = '';
+  _stockAdjType = 'add';
+  document.querySelectorAll('.stock-tab').forEach(t => t.classList.toggle('active', t.dataset.stype === 'add'));
+  document.getElementById('stock-qty-label').textContent = 'Quantity to Add';
+  showModal('modal-stock');
+}
+
+document.querySelectorAll('.stock-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    _stockAdjType = tab.dataset.stype;
+    document.querySelectorAll('.stock-tab').forEach(t => t.classList.remove('active'));
+    tab.classList.add('active');
+    const labels = { add: 'Quantity to Add', remove: 'Quantity to Remove', set: 'New Exact Quantity' };
+    document.getElementById('stock-qty-label').textContent = labels[_stockAdjType];
+    updateStockPreview();
+  });
+});
+
+document.getElementById('stock-qty').addEventListener('input', updateStockPreview);
+
+function updateStockPreview() {
+  const productId = document.getElementById('stock-product-id').value;
+  const p = Store.getProducts().find(x => x.id === productId);
+  if (!p) return;
+  const qty = parseInt(document.getElementById('stock-qty').value) || 0;
+  let newStock;
+  if (_stockAdjType === 'add') newStock = p.stock + qty;
+  else if (_stockAdjType === 'remove') newStock = Math.max(0, p.stock - qty);
+  else newStock = qty;
+  const diff = newStock - p.stock;
+  const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
+  const color = diff > 0 ? 'var(--success)' : diff < 0 ? 'var(--danger)' : 'var(--text-muted)';
+  document.getElementById('stock-result-preview').innerHTML = `
+    <div class="stock-preview-row">
+      <span>${p.stock} ${p.unit || 'pcs'}</span>
+      <span style="color:${color};font-weight:700">${diffStr}</span>
+      <span>→</span>
+      <strong style="font-size:1.1rem">${newStock} ${p.unit || 'pcs'}</strong>
+    </div>`;
+}
+
+document.getElementById('btn-save-stock').addEventListener('click', () => {
+  const productId = document.getElementById('stock-product-id').value;
+  const p = Store.getProducts().find(x => x.id === productId);
+  if (!p) return;
+  const qty = parseInt(document.getElementById('stock-qty').value);
+  if (isNaN(qty) || qty < 0) { toast('Enter a valid quantity', 'error'); return; }
+  const reason = document.getElementById('stock-reason').value;
+  if (!reason) { toast('Please select a reason', 'error'); return; }
+  const notes = document.getElementById('stock-notes').value.trim();
+
+  const before = p.stock;
+  let after;
+  if (_stockAdjType === 'add') after = before + qty;
+  else if (_stockAdjType === 'remove') after = Math.max(0, before - qty);
+  else after = qty;
+
+  const diff = after - before;
+  p.stock = after;
+  p.updatedAt = Date.now();
+  Store.upsertProduct(p);
+
+  const entry = {
+    id: OrangeCrypto.uid(),
+    ts: Date.now(),
+    productId,
+    productName: p.name,
+    type: _stockAdjType,
+    qty: Math.abs(diff),
+    before,
+    after,
+    reason,
+    notes,
+    by: App.currentUser.name,
+  };
+  Store.addStockEntry(entry);
+  audit('STOCK_ADJUST', { product: p.name, before, after, diff, reason, by: App.currentUser.name });
+
+  hideModal('modal-stock');
+  renderInventory();
+  renderProductGrid();
+  checkLowStockAlerts();
+  toast(`Stock updated: ${p.name} → ${after} ${p.unit || 'pcs'}`, 'success');
+});
+
+function openStockHistory(productId) {
+  const p = Store.getProducts().find(x => x.id === productId);
+  if (!p) return;
+  document.getElementById('stock-history-title').textContent = `Stock History — ${p.name}`;
+  const log = Store.getStockLog().filter(e => e.productId === productId);
+  const tbody = document.getElementById('stock-history-tbody');
+  if (!log.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted);padding:1.5rem">No adjustment history yet</td></tr>';
+  } else {
+    tbody.innerHTML = log.map(e => {
+      const diff = e.after - e.before;
+      const color = diff > 0 ? 'var(--success)' : 'var(--danger)';
+      return `<tr>
+        <td>${fmtDate(e.ts)}</td>
+        <td style="text-transform:capitalize">${e.type}</td>
+        <td style="color:${color};font-weight:600">${diff > 0 ? '+' : ''}${diff}</td>
+        <td>${e.before}</td>
+        <td><strong>${e.after}</strong></td>
+        <td>${escHtml(e.reason)}${e.notes ? ` — ${escHtml(e.notes)}` : ''}</td>
+        <td>${escHtml(e.by)}</td>
+      </tr>`;
+    }).join('');
+  }
+  showModal('modal-stock-history');
+}
+
+/* ============================
+   PRICE OVERRIDE (per cart line)
+   ============================ */
+function openPriceOverride(productId) {
+  const item = App.cart.find(i => i.productId === productId);
+  if (!item) return;
+  document.getElementById('override-product-id').value = productId;
+  document.getElementById('override-item-name').textContent = item.name;
+  document.getElementById('override-original-price').textContent = fmt(item.price);
+  document.getElementById('override-new-price').value = '';
+  document.getElementById('override-reason').value = '';
+  document.getElementById('override-pin').value = '';
+  showModal('modal-price-override');
+}
+
+document.getElementById('btn-apply-override').addEventListener('click', async () => {
+  const productId = document.getElementById('override-product-id').value;
+  const item = App.cart.find(i => i.productId === productId);
+  if (!item) return;
+
+  const newPrice = parseFloat(document.getElementById('override-new-price').value);
+  if (isNaN(newPrice) || newPrice < 0) { toast('Enter a valid price', 'error'); return; }
+  const reason = document.getElementById('override-reason').value;
+  if (!reason) { toast('Please select a reason', 'error'); return; }
+  const pin = document.getElementById('override-pin').value;
+  if (!pin) { toast('Manager PIN is required', 'error'); return; }
+
+  // Verify PIN belongs to manager or admin
+  const pinHash = await OrangeCrypto.hashPin(pin);
+  const authorizer = Store.getUserByPin(pinHash);
+  if (!authorizer || (authorizer.role !== 'admin' && authorizer.role !== 'manager')) {
+    toast('Invalid PIN or insufficient role (manager/admin required)', 'error'); return;
+  }
+
+  const originalPrice = item.originalPrice || item.price;
+  item.originalPrice = originalPrice;
+  item.price = newPrice;
+  item.priceOverride = true;
+  item.overrideReason = reason;
+  item.overrideBy = authorizer.name;
+
+  audit('PRICE_OVERRIDE', {
+    product: item.name,
+    original: fmt(originalPrice),
+    newPrice: fmt(newPrice),
+    reason,
+    authorizedBy: authorizer.name,
+    cashier: App.currentUser.name,
+  });
+
+  hideModal('modal-price-override');
+  renderCart();
+  toast(`Price overridden: ${item.name} → ${fmt(newPrice)} (by ${authorizer.name})`, 'warning');
+});
+
+/* ============================
+   Z-REPORT / SHIFT MANAGEMENT
+   ============================ */
+function renderZReport() {
+  const openShift = Store.getOpenShift();
+  const statusBar = document.getElementById('shift-status-bar');
+  const body = document.getElementById('zreport-body');
+  const btnOpen = document.getElementById('btn-open-shift');
+  const btnClose = document.getElementById('btn-close-shift');
+
+  if (openShift) {
+    statusBar.innerHTML = `
+      <div class="shift-open-indicator">
+        <span class="status-badge status-active">● Shift Open</span>
+        <span>Opened by <strong>${escHtml(openShift.openedBy)}</strong> at ${fmtDate(openShift.openedAt)}</span>
+        <span>Opening float: <strong>${fmt(openShift.openFloat)}</strong></span>
+      </div>`;
+    btnOpen.style.display = 'none';
+    btnClose.style.display = '';
+    renderZReportBody(openShift);
+  } else {
+    statusBar.innerHTML = `<div class="shift-closed-indicator"><span class="status-badge status-inactive">● No Open Shift</span><span>Open a shift to start tracking sales.</span></div>`;
+    btnOpen.style.display = '';
+    btnClose.style.display = 'none';
+
+    // Show past shifts
+    const shifts = Store.getShifts().filter(s => s.status === 'closed').slice(-10).reverse();
+    if (shifts.length) {
+      body.innerHTML = `<h3 style="margin-bottom:1rem">Recent Shifts</h3>` +
+        shifts.map(s => shiftSummaryCard(s, false)).join('');
+    } else {
+      body.innerHTML = '<div style="color:var(--text-muted);text-align:center;padding:3rem">No shift history yet</div>';
+    }
+  }
+}
+
+function renderZReportBody(shift) {
+  const body = document.getElementById('zreport-body');
+  body.innerHTML = shiftSummaryCard(shift, true);
+}
+
+function shiftSummaryCard(shift, isLive) {
+  const shiftOrders = Store.getOrders().filter(o =>
+    o.status === 'completed' &&
+    o.createdAt >= shift.openedAt &&
+    (!shift.closedAt || o.createdAt <= shift.closedAt)
+  );
+  const revenue = shiftOrders.reduce((s, o) => s + o.total, 0);
+  const tax = shiftOrders.reduce((s, o) => s + o.taxAmt, 0);
+  const items = shiftOrders.reduce((s, o) => s + o.items.reduce((ss, i) => ss + i.qty, 0), 0);
+  const voids = Store.getOrders().filter(o => o.status === 'voided' && o.createdAt >= shift.openedAt && (!shift.closedAt || o.createdAt <= shift.closedAt)).length;
+  const refunds = Store.getOrders().filter(o => o.status === 'refunded' && o.createdAt >= shift.openedAt && (!shift.closedAt || o.createdAt <= shift.closedAt)).length;
+
+  // Payment breakdown
+  const payBreak = {};
+  shiftOrders.forEach(o => { payBreak[o.paymentMethod] = (payBreak[o.paymentMethod] || 0) + o.total; });
+
+  const expectedCash = (payBreak.cash || 0) + (shift.openFloat || 0);
+
+  return `
+    <div class="zreport-card">
+      <div class="zreport-header">
+        <div>
+          <h3>${isLive ? 'Current Shift Summary' : `Shift — ${fmtDate(shift.openedAt)}`}</h3>
+          <div class="zreport-meta">
+            Opened by <strong>${escHtml(shift.openedBy)}</strong> · ${fmtDate(shift.openedAt)}
+            ${shift.closedAt ? ` → Closed ${fmtDate(shift.closedAt)} by ${escHtml(shift.closedBy || '—')}` : ' · <span style="color:var(--success)">In Progress</span>'}
+          </div>
+        </div>
+        ${!isLive ? `<button class="btn btn-secondary btn-sm" onclick="printShiftReport('${shift.id}')">Print</button>` : '<button class="btn btn-secondary btn-sm" onclick="printShiftReport(null)">Print</button>'}
+      </div>
+      <div class="zreport-stats">
+        <div class="zreport-stat"><span>Orders</span><strong>${shiftOrders.length}</strong></div>
+        <div class="zreport-stat"><span>Items Sold</span><strong>${items}</strong></div>
+        <div class="zreport-stat"><span>Gross Revenue</span><strong>${fmt(revenue)}</strong></div>
+        <div class="zreport-stat"><span>VAT Collected</span><strong>${fmt(tax)}</strong></div>
+        <div class="zreport-stat"><span>Net Revenue</span><strong>${fmt(revenue - tax)}</strong></div>
+        <div class="zreport-stat"><span>Opening Float</span><strong>${fmt(shift.openFloat || 0)}</strong></div>
+        <div class="zreport-stat"><span>Expected Cash</span><strong>${fmt(expectedCash)}</strong></div>
+        <div class="zreport-stat"><span>Voids</span><strong style="color:var(--warning)">${voids}</strong></div>
+        <div class="zreport-stat"><span>Refunds</span><strong style="color:var(--danger)">${refunds}</strong></div>
+      </div>
+      <div class="zreport-section">
+        <h4>Payment Breakdown</h4>
+        <div class="zreport-payments">
+          ${Object.entries(payBreak).map(([method, amt]) =>
+            `<div class="zreport-pay-row"><span style="text-transform:capitalize">${escHtml(method)}</span><strong>${fmt(amt)}</strong></div>`
+          ).join('') || '<span style="color:var(--text-muted);font-size:0.85rem">No sales</span>'}
+        </div>
+      </div>
+      ${shift.closedAt && shift.closingNote ? `<div class="zreport-section"><h4>Closing Notes</h4><p>${escHtml(shift.closingNote)}</p></div>` : ''}
+    </div>`;
+}
+
+document.getElementById('btn-open-shift').addEventListener('click', async () => {
+  if (Store.getOpenShift()) { toast('A shift is already open', 'error'); return; }
+  const floatStr = prompt('Enter opening float (cash in drawer):');
+  if (floatStr === null) return;
+  const openFloat = parseFloat(floatStr) || 0;
+  const shift = {
+    id: OrangeCrypto.uid(),
+    openedAt: Date.now(),
+    openedBy: App.currentUser.name,
+    openFloat,
+    status: 'open',
+  };
+  Store.addShift(shift);
+  audit('SHIFT_OPEN', { by: App.currentUser.name, float: fmt(openFloat) });
+  renderZReport();
+  toast(`Shift opened — Float: ${fmt(openFloat)}`, 'success');
+});
+
+document.getElementById('btn-close-shift').addEventListener('click', async () => {
+  const shift = Store.getOpenShift();
+  if (!shift) { toast('No open shift', 'error'); return; }
+  if (!await confirm('Close Shift', 'Close the current shift and generate the Z-Report? This will lock the shift record.')) return;
+  const closingNote = prompt('Closing notes (optional):') || '';
+  const shifts = Store.getShifts();
+  const s = shifts.find(x => x.id === shift.id);
+  if (s) {
+    s.status = 'closed';
+    s.closedAt = Date.now();
+    s.closedBy = App.currentUser.name;
+    s.closingNote = closingNote;
+    Store.saveShifts(shifts);
+  }
+  audit('SHIFT_CLOSE', { by: App.currentUser.name, shiftId: shift.id });
+  renderZReport();
+  toast('Shift closed — Z-Report saved', 'success');
+  setTimeout(() => printShiftReport(shift.id), 300);
+});
+
+function printShiftReport(shiftId) {
+  let shift;
+  if (shiftId) shift = Store.getShifts().find(s => s.id === shiftId);
+  else shift = Store.getOpenShift();
+  if (!shift) return;
+
+  const settings = Store.getSettings();
+  const shiftOrders = Store.getOrders().filter(o =>
+    o.status === 'completed' && o.createdAt >= shift.openedAt &&
+    (!shift.closedAt || o.createdAt <= shift.closedAt)
+  );
+  const revenue = shiftOrders.reduce((s, o) => s + o.total, 0);
+  const tax = shiftOrders.reduce((s, o) => s + o.taxAmt, 0);
+  const items = shiftOrders.reduce((s, o) => s + o.items.reduce((ss, i) => ss + i.qty, 0), 0);
+  const payBreak = {};
+  shiftOrders.forEach(o => { payBreak[o.paymentMethod] = (payBreak[o.paymentMethod] || 0) + o.total; });
+  const expectedCash = (payBreak.cash || 0) + (shift.openFloat || 0);
+  const voids = Store.getOrders().filter(o => o.status === 'voided' && o.createdAt >= shift.openedAt && (!shift.closedAt || o.createdAt <= shift.closedAt)).length;
+  const refunds = Store.getOrders().filter(o => o.status === 'refunded' && o.createdAt >= shift.openedAt && (!shift.closedAt || o.createdAt <= shift.closedAt)).length;
+
+  const payRows = Object.entries(payBreak).map(([m,a]) => `<tr><td style="text-transform:capitalize">${m}</td><td>${fmt(a)}</td></tr>`).join('');
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+    <title>Z-Report — ${settings.bizName || 'OrangePOS'}</title>
+    <style>
+      body{font-family:sans-serif;font-size:13px;color:#111;margin:1.5cm}
+      h1{font-size:20px;margin:0 0 4px}
+      .sub{color:#666;font-size:12px;margin-bottom:16px}
+      .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+      .stat{border:1px solid #ddd;border-radius:6px;padding:10px 14px}
+      .stat span{font-size:10px;text-transform:uppercase;color:#888;letter-spacing:.04em;display:block}
+      .stat strong{font-size:18px;font-weight:700}
+      h2{font-size:13px;border-bottom:1px solid #eee;padding-bottom:4px;margin:14px 0 8px;text-transform:uppercase;letter-spacing:.04em;color:#666}
+      table{width:100%;border-collapse:collapse;font-size:12px}
+      th{text-align:left;padding:5px 8px;background:#f5f5f5;border-bottom:1px solid #ddd;font-size:11px}
+      td{padding:5px 8px;border-bottom:1px solid #f0f0f0}
+      .footer{margin-top:20px;font-size:11px;color:#aaa;text-align:center;border-top:1px dashed #ddd;padding-top:10px}
+    </style></head><body>
+    <h1>Z-Report — ${escHtml(settings.bizName || 'My Store')}</h1>
+    <div class="sub">
+      Shift opened: ${fmtDate(shift.openedAt)} by ${escHtml(shift.openedBy)}<br>
+      ${shift.closedAt ? `Shift closed: ${fmtDate(shift.closedAt)} by ${escHtml(shift.closedBy || '—')}<br>` : ''}
+      Printed: ${new Date().toLocaleString('en-PH')}
+    </div>
+    <div class="stats">
+      <div class="stat"><span>Total Orders</span><strong>${shiftOrders.length}</strong></div>
+      <div class="stat"><span>Items Sold</span><strong>${items}</strong></div>
+      <div class="stat"><span>Gross Revenue</span><strong>${fmt(revenue)}</strong></div>
+      <div class="stat"><span>VAT Collected</span><strong>${fmt(tax)}</strong></div>
+      <div class="stat"><span>Net Revenue</span><strong>${fmt(revenue - tax)}</strong></div>
+      <div class="stat"><span>Opening Float</span><strong>${fmt(shift.openFloat || 0)}</strong></div>
+      <div class="stat"><span>Expected Cash</span><strong>${fmt(expectedCash)}</strong></div>
+      <div class="stat"><span>Voids</span><strong>${voids}</strong></div>
+      <div class="stat"><span>Refunds</span><strong>${refunds}</strong></div>
+    </div>
+    <h2>Payment Methods</h2>
+    <table><thead><tr><th>Method</th><th>Amount</th></tr></thead><tbody>
+      ${payRows || '<tr><td colspan="2">No sales</td></tr>'}
+    </tbody></table>
+    <h2>Order Log</h2>
+    <table><thead><tr><th>Order #</th><th>Time</th><th>Cashier</th><th>Total</th><th>Payment</th></tr></thead><tbody>
+      ${shiftOrders.map(o => `<tr>
+        <td>${o.orderNum}</td>
+        <td>${new Date(o.createdAt).toLocaleTimeString('en-PH')}</td>
+        <td>${escHtml(o.cashierName)}</td>
+        <td>${fmt(o.total)}</td>
+        <td style="text-transform:capitalize">${o.paymentMethod}</td>
+      </tr>`).join('')}
+    </tbody></table>
+    ${shift.closingNote ? `<h2>Closing Notes</h2><p>${escHtml(shift.closingNote)}</p>` : ''}
+    <div class="footer">OrangePOS · ${escHtml(settings.bizName || '')} · Z-Report</div>
+    <script>window.onload=()=>{window.print();window.onafterprint=()=>window.close()}<\/script>
+  </body></html>`;
+
+  const win = window.open('', '_blank', 'width=800,height=700');
+  if (win) { win.document.write(html); win.document.close(); }
+  else toast('Pop-up blocked. Allow pop-ups to print.', 'warning');
+}
 function renderCartCustomers() {
   const sel = document.getElementById('cart-customer');
   const current = sel.value;
@@ -1047,7 +1588,7 @@ function renderReports() {
       return ss + (p?.cost || 0) * i.qty;
     }, 0);
   }, 0);
-  const profit = revenue - tax - costs;
+  const profit = revenue - costs; // revenue is already net; don't subtract tax (VAT is collected, not a cost)
   const avg = orders.length ? revenue / orders.length : 0;
 
   document.getElementById('rpt-revenue').textContent = fmt(revenue);
@@ -1250,7 +1791,49 @@ function loadSettings() {
   document.getElementById('set-currency').value = s.currency || '₱';
   document.getElementById('set-low-stock-alert').checked = s.lowStockAlert !== false;
   document.getElementById('set-low-stock-qty').value = s.lowStockQty || 5;
+  document.getElementById('set-wholesale-enabled').checked = s.wholesaleEnabled !== false;
+  document.getElementById('set-retail-label').value = s.retailLabel || 'Retail';
+  document.getElementById('set-wholesale-label').value = s.wholesaleLabel || 'Wholesale';
+  document.getElementById('set-wholesale-discount').value = s.wholesaleDiscount ?? 15;
+  document.getElementById('set-wholesale-discount-slider').value = s.wholesaleDiscount ?? 15;
+  toggleWholesaleFields();
+  updateWholesalePreview();
 }
+
+function toggleWholesaleFields() {
+  const enabled = document.getElementById('set-wholesale-enabled').checked;
+  document.getElementById('wholesale-fields').style.display = enabled ? '' : 'none';
+}
+
+function updateWholesalePreview() {
+  const disc = parseFloat(document.getElementById('set-wholesale-discount').value) || 0;
+  const retailLabel = document.getElementById('set-retail-label').value || 'Retail';
+  const wsLabel = document.getElementById('set-wholesale-label').value || 'Wholesale';
+  const bar = document.getElementById('wholesale-preview-bar');
+  if (!bar) return;
+  const exRetail = 100;
+  const exWS = Math.round(exRetail * (1 - disc / 100) * 100) / 100;
+  bar.innerHTML = `
+    <div class="ws-preview-item"><span class="ws-preview-label">${escHtml(retailLabel)}</span><span class="ws-preview-price">₱${exRetail.toFixed(2)}</span></div>
+    <div class="ws-preview-arrow">→</div>
+    <div class="ws-preview-item ws-active-preview"><span class="ws-preview-label">${escHtml(wsLabel)}</span><span class="ws-preview-price">₱${exWS.toFixed(2)}</span></div>
+    <span class="ws-preview-saving">−${disc}% off retail</span>`;
+}
+
+// Sync slider ↔ number input
+document.getElementById('set-wholesale-discount').addEventListener('input', (e) => {
+  const v = Math.min(100, Math.max(0, parseFloat(e.target.value) || 0));
+  document.getElementById('set-wholesale-discount-slider').value = v;
+  updateWholesalePreview();
+});
+document.getElementById('set-wholesale-discount-slider').addEventListener('input', (e) => {
+  document.getElementById('set-wholesale-discount').value = e.target.value;
+  updateWholesalePreview();
+});
+document.getElementById('set-retail-label').addEventListener('input', updateWholesalePreview);
+document.getElementById('set-wholesale-label').addEventListener('input', updateWholesalePreview);
+
+document.getElementById('set-wholesale-enabled').addEventListener('change', toggleWholesaleFields);
 
 document.getElementById('btn-save-settings').addEventListener('click', () => {
   const settings = {
@@ -1264,9 +1847,15 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
     currency: document.getElementById('set-currency').value.trim() || '₱',
     lowStockAlert: document.getElementById('set-low-stock-alert').checked,
     lowStockQty: parseInt(document.getElementById('set-low-stock-qty').value) || 5,
+    wholesaleEnabled: document.getElementById('set-wholesale-enabled').checked,
+    retailLabel: document.getElementById('set-retail-label').value.trim() || 'Retail',
+    wholesaleLabel: document.getElementById('set-wholesale-label').value.trim() || 'Wholesale',
+    wholesaleDiscount: parseFloat(document.getElementById('set-wholesale-discount').value) || 0,
   };
   Store.saveSettings(settings);
   audit('UPDATE_SETTINGS', 'Settings updated');
+  updatePricingToggleUI();
+  renderProductGrid();
   toast('Settings saved', 'success');
 });
 
@@ -1385,28 +1974,49 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
    BARCODE SCANNER + SEARCH FOCUS
    ============================ */
 
-// Always keep the product search focused when on the POS view
-// and no modal is open. This lets USB barcode scanners work without clicking.
+// Elements that should be allowed to keep focus — never steal from these
+function userIsInteracting() {
+  if (window._qtyFocused) return true;
+  const el = document.activeElement;
+  if (!el || el === document.body) return false;
+  const tag = el.tagName;
+  // Any input/select/button/textarea that is NOT the search bar itself
+  if (['INPUT','TEXTAREA','SELECT','BUTTON'].includes(tag) && el.id !== 'product-search') return true;
+  // Any element inside a modal
+  if (el.closest?.('.modal-overlay:not(.hidden)')) return true;
+  return false;
+}
+
 function maintainSearchFocus() {
   if (App.currentView !== 'pos') return;
-  if (window._qtyFocused) return; // don't steal focus from qty inputs
+  if (userIsInteracting()) return;
   const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
   if (anyModalOpen) return;
   const searchEl = document.getElementById('product-search');
   if (document.activeElement !== searchEl) searchEl.focus();
 }
 
-// Re-focus search after modal closes or view changes
+// Re-focus search when clicking on inert areas (product grid, cart bg, etc.)
+// but NOT when the click lands on or inside an interactive element
 document.addEventListener('click', (e) => {
   if (App.currentView !== 'pos') return;
   const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
-  if (!anyModalOpen) setTimeout(maintainSearchFocus, 50);
+  if (anyModalOpen) return;
+  // Walk up from the click target — if it or any ancestor is interactive, don't steal focus
+  const interactiveTags = ['INPUT','SELECT','TEXTAREA','BUTTON','A','LABEL'];
+  let node = e.target;
+  while (node && node !== document.body) {
+    if (interactiveTags.includes(node.tagName)) return;
+    node = node.parentElement;
+  }
+  setTimeout(maintainSearchFocus, 50);
 });
 
 // Escape closes modals and returns focus to search
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape') {
     document.querySelectorAll('.modal-overlay:not(.hidden)').forEach(m => m.classList.add('hidden'));
+    window._qtyFocused = false;
     setTimeout(maintainSearchFocus, 50);
   }
 });
@@ -1461,7 +2071,7 @@ document.getElementById('product-search').addEventListener('keydown', (e) => {
       } else if (byName.length === 0) {
         toast(`Not found: "${val}"`, 'error');
       }
-      // If multiple matches, just leave search results visible so user can tap
+      // If multiple matches, leave search results visible so user can tap
     }
     scannerMode = false;
   }
@@ -1471,17 +2081,14 @@ document.getElementById('product-search').addEventListener('keydown', (e) => {
   scannerTimer = setTimeout(() => { scannerMode = false; }, 200);
 });
 
-// When search box loses focus (user clicked elsewhere in POS view),
-// restore focus after a short delay unless a modal just opened or user left POS
+// Only restore search focus when losing it to a truly inert element
 document.getElementById('product-search').addEventListener('blur', () => {
   if (App.currentView !== 'pos') return;
   setTimeout(() => {
-    if (window._qtyFocused) return;
+    if (userIsInteracting()) return;
     const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
-    const activeTag = document.activeElement?.tagName;
-    const isInteractable = ['INPUT','TEXTAREA','SELECT','BUTTON'].includes(activeTag);
-    if (!anyModalOpen && !isInteractable) maintainSearchFocus();
-  }, 150);
+    if (!anyModalOpen) maintainSearchFocus();
+  }, 200);
 });
 
 /* ============================

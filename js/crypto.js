@@ -46,15 +46,20 @@ const OrangeCrypto = (() => {
   }
 
   /**
-   * Generate a short readable order number
+   * Generate a unique, human-readable order number
+   * Format: YYMMDD-HHMMSS-XXXX (date + time + random hex)
+   * Collision probability: astronomically low
    */
   function orderNum() {
     const d = new Date();
     const yy = String(d.getFullYear()).slice(2);
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
-    const rand = Math.floor(Math.random() * 9000) + 1000;
-    return `${yy}${mm}${dd}-${rand}`;
+    const hh = String(d.getHours()).padStart(2, '0');
+    const mi = String(d.getMinutes()).padStart(2, '0');
+    const ss = String(d.getSeconds()).padStart(2, '0');
+    const rand = Math.floor(Math.random() * 0xFFFF).toString(16).toUpperCase().padStart(4, '0');
+    return `${yy}${mm}${dd}-${hh}${mi}${ss}-${rand}`;
   }
 
   return { hashPin, verifyPin, signData, uid, orderNum };
