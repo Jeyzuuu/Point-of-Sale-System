@@ -1,7 +1,6 @@
 /**
  * OrangePOS — Store Module
  * All data persistence via localStorage
- * Schema: users, products, orders, customers, categories, settings, auditLog, heldOrders
  */
 
 const Store = (() => {
@@ -15,13 +14,30 @@ const Store = (() => {
     audit: 'opos_audit',
     held: 'opos_held',
     session: 'opos_session',
+    shifts: 'opos_shifts',
+    stockLog: 'opos_stock_log',
+  };
+
+  const SETTINGS_DEFAULTS = {
+    bizName: 'My Store',
+    bizAddress: '',
+    bizPhone: '',
+    bizTin: '',
+    receiptFooter: 'Thank you for your purchase!',
+    taxRate: 12,
+    pricesTaxInclusive: true,
+    currency: '₱',
+    lowStockAlert: true,
+    lowStockQty: 5,
+    wholesaleEnabled: true,
+    retailLabel: 'Retail',
+    wholesaleLabel: 'Wholesale',
+    wholesaleDiscount: 15,
   };
 
   function _get(key) {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) : null;
-    } catch { return null; }
+    try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : null; }
+    catch { return null; }
   }
   function _set(key, val) {
     try { localStorage.setItem(key, JSON.stringify(val)); return true; }
@@ -40,9 +56,7 @@ const Store = (() => {
     if (idx >= 0) users[idx] = user; else users.push(user);
     saveUsers(users);
   }
-  function deleteUser(id) {
-    saveUsers(getUsers().filter(u => u.id !== id));
-  }
+  function deleteUser(id) { saveUsers(getUsers().filter(u => u.id !== id)); }
 
   /* ---- Products ---- */
   function getProducts() { return _get(KEYS.products) || []; }
@@ -53,16 +67,12 @@ const Store = (() => {
     if (idx >= 0) products[idx] = product; else products.push(product);
     saveProducts(products);
   }
-  function deleteProduct(id) {
-    saveProducts(getProducts().filter(p => p.id !== id));
-  }
+  function deleteProduct(id) { saveProducts(getProducts().filter(p => p.id !== id)); }
   function decrementStock(items) {
     const products = getProducts();
     items.forEach(item => {
       const p = products.find(x => x.id === item.productId);
-      if (p && p.trackStock !== false) {
-        p.stock = Math.max(0, (p.stock || 0) - item.qty);
-      }
+      if (p && p.trackStock !== false) p.stock = Math.max(0, (p.stock || 0) - item.qty);
     });
     saveProducts(products);
   }
@@ -70,11 +80,18 @@ const Store = (() => {
     const products = getProducts();
     items.forEach(item => {
       const p = products.find(x => x.id === item.productId);
-      if (p && p.trackStock !== false) {
-        p.stock = (p.stock || 0) + item.qty;
-      }
+      if (p && p.trackStock !== false) p.stock = (p.stock || 0) + item.qty;
     });
     saveProducts(products);
+  }
+
+  /* ---- Stock Adjustment Log ---- */
+  function getStockLog() { return _get(KEYS.stockLog) || []; }
+  function addStockEntry(entry) {
+    const log = getStockLog();
+    log.unshift(entry);
+    if (log.length > 2000) log.splice(2000);
+    _set(KEYS.stockLog, log);
   }
 
   /* ---- Orders ---- */
@@ -85,10 +102,15 @@ const Store = (() => {
     orders.push(order);
     saveOrders(orders);
   }
-  function updateOrderStatus(id, status) {
+  function updateOrderStatus(id, status, extra = {}) {
     const orders = getOrders();
     const o = orders.find(x => x.id === id);
-    if (o) { o.status = status; o.updatedAt = Date.now(); saveOrders(orders); }
+    if (o) { Object.assign(o, { status, updatedAt: Date.now(), ...extra }); saveOrders(orders); }
+  }
+  function updateOrder(id, fields) {
+    const orders = getOrders();
+    const o = orders.find(x => x.id === id);
+    if (o) { Object.assign(o, fields); saveOrders(orders); }
   }
 
   /* ---- Customers ---- */
@@ -100,9 +122,7 @@ const Store = (() => {
     if (idx >= 0) customers[idx] = customer; else customers.push(customer);
     saveCustomers(customers);
   }
-  function deleteCustomer(id) {
-    saveCustomers(getCustomers().filter(c => c.id !== id));
-  }
+  function deleteCustomer(id) { saveCustomers(getCustomers().filter(c => c.id !== id)); }
   function updateCustomerStats(customerId, total, points) {
     const customers = getCustomers();
     const c = customers.find(x => x.id === customerId);
@@ -119,43 +139,39 @@ const Store = (() => {
   function getCategories() { return _get(KEYS.categories) || []; }
   function saveCategories(arr) { _set(KEYS.categories, arr); }
 
-  /* ---- Settings ---- */
+  /* ---- Settings — always merges with defaults so new fields are never undefined ---- */
   function getSettings() {
-    return _get(KEYS.settings) || {
-      bizName: 'My Store',
-      bizAddress: '',
-      bizPhone: '',
-      bizTin: '',
-      receiptFooter: 'Thank you for your purchase!',
-      taxRate: 12,
-      pricesTaxInclusive: true,
-      currency: '₱',
-      lowStockAlert: true,
-      lowStockQty: 5,
-    };
+    const saved = _get(KEYS.settings) || {};
+    return Object.assign({}, SETTINGS_DEFAULTS, saved);
   }
   function saveSettings(settings) { _set(KEYS.settings, settings); }
+
+  /* ---- Shifts / Z-Report ---- */
+  function getShifts() { return _get(KEYS.shifts) || []; }
+  function saveShifts(arr) { _set(KEYS.shifts, arr); }
+  function addShift(shift) {
+    const shifts = getShifts();
+    shifts.push(shift);
+    _set(KEYS.shifts, shifts);
+  }
+  function getOpenShift() {
+    return getShifts().find(s => s.status === 'open') || null;
+  }
 
   /* ---- Audit Log ---- */
   function getAuditLog() { return _get(KEYS.audit) || []; }
   function addAuditEntry(entry) {
     const log = getAuditLog();
     log.unshift(entry);
-    if (log.length > 1000) log.splice(1000);
+    if (log.length > 2000) log.splice(2000);
     _set(KEYS.audit, log);
   }
 
   /* ---- Held Orders ---- */
   function getHeld() { return _get(KEYS.held) || []; }
   function saveHeld(arr) { _set(KEYS.held, arr); }
-  function addHeld(order) {
-    const held = getHeld();
-    held.push(order);
-    saveHeld(held);
-  }
-  function removeHeld(id) {
-    saveHeld(getHeld().filter(h => h.id !== id));
-  }
+  function addHeld(order) { const h = getHeld(); h.push(order); saveHeld(h); }
+  function removeHeld(id) { saveHeld(getHeld().filter(h => h.id !== id)); }
 
   /* ---- Session ---- */
   function getSession() { return _get(KEYS.session); }
@@ -173,6 +189,8 @@ const Store = (() => {
       customers: getCustomers(),
       categories: getCategories(),
       settings: getSettings(),
+      shifts: getShifts(),
+      stockLog: getStockLog(),
     };
   }
   function importAll(data) {
@@ -183,18 +201,20 @@ const Store = (() => {
     if (data.customers) saveCustomers(data.customers);
     if (data.categories) saveCategories(data.categories);
     if (data.settings) saveSettings(data.settings);
+    if (data.shifts) saveShifts(data.shifts);
+    if (data.stockLog) _set(KEYS.stockLog, data.stockLog);
   }
-  function clearAll() {
-    Object.values(KEYS).forEach(k => localStorage.removeItem(k));
-  }
+  function clearAll() { Object.values(KEYS).forEach(k => localStorage.removeItem(k)); }
 
   return {
     getUsers, saveUsers, getUserByPin, upsertUser, deleteUser,
     getProducts, saveProducts, upsertProduct, deleteProduct, decrementStock, incrementStock,
-    getOrders, saveOrders, addOrder, updateOrderStatus,
+    getStockLog, addStockEntry,
+    getOrders, saveOrders, addOrder, updateOrderStatus, updateOrder,
     getCustomers, saveCustomers, upsertCustomer, deleteCustomer, updateCustomerStats,
     getCategories, saveCategories,
     getSettings, saveSettings,
+    getShifts, saveShifts, addShift, getOpenShift,
     getAuditLog, addAuditEntry,
     getHeld, addHeld, removeHeld,
     getSession, setSession, clearSession,

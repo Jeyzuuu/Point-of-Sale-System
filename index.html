@@ -62,6 +62,10 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93l-1.41 1.41M4.93 4.93l1.41 1.41M12 2v2M12 20v2M2 12h2M20 12h2M19.07 19.07l-1.41-1.41M4.93 19.07l1.41-1.41"/></svg>
               <span>Admin</span>
             </a></li>
+            <li class="admin-only"><a href="#" class="nav-link" data-view="zreport" title="Z-Report / Shift">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>
+              <span>Z-Report</span>
+            </a></li>
           </ul>
           <div class="nav-bottom">
             <div class="nav-user" id="nav-user">
@@ -100,15 +104,21 @@
               <div class="register-cart">
                 <div class="cart-header">
                   <h2>Current Order</h2>
-                  <div class="cart-actions">
+                  <div class="cart-header-right">
+                    <div id="pricing-toggle-wrap" class="pricing-toggle-wrap">
+                      <button id="pricing-btn-retail" class="pricing-btn active" onclick="setPricingMode('retail')">Retail</button>
+                      <button id="pricing-btn-wholesale" class="pricing-btn" onclick="setPricingMode('wholesale')">Wholesale</button>
+                    </div>
+                    <div class="cart-actions">
                     <button class="btn-icon" id="btn-hold" title="Hold order">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 00-2-2v0a2 2 0 00-2 2v0M14 10V4a2 2 0 00-2-2v0a2 2 0 00-2 2v0M10 10.5V6a2 2 0 00-2-2v0a2 2 0 00-2 2v5"/><path d="M6 14v0a2 2 0 00-2 2v0c0 2.5 2 6 4 6h6c2.5 0 4-2 4-6v-5"/></svg>
                     </button>
                     <button class="btn-icon danger" id="btn-clear-cart" title="Clear cart">
                       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/></svg>
                     </button>
-                  </div>
-                </div>
+                  </div><!-- end cart-actions -->
+                  </div><!-- end cart-header-right -->
+                </div><!-- end cart-header -->
 
                 <div class="customer-select-bar">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
@@ -321,6 +331,21 @@
             </div>
           </div>
 
+          <!-- Z-Report / Shift View -->
+          <div id="view-zreport" class="view admin-only-view">
+            <div class="view-header">
+              <h2>Z-Report / Shift Management</h2>
+              <div class="view-toolbar">
+                <button class="btn btn-primary" id="btn-open-shift">Open Shift</button>
+                <button class="btn btn-warning" id="btn-close-shift">Close Shift (Z-Report)</button>
+              </div>
+            </div>
+            <div id="zreport-content" style="padding:1.5rem;overflow-y:auto;flex:1">
+              <div id="shift-status-bar" class="shift-status-bar"></div>
+              <div id="zreport-body"></div>
+            </div>
+          </div>
+
           <!-- Admin View -->
           <div id="view-admin" class="view admin-only-view">
             <div class="view-header">
@@ -401,6 +426,37 @@
                   <div class="field">
                     <label>Low Stock Threshold</label>
                     <input type="number" id="set-low-stock-qty" class="input-sm" min="1">
+                  </div>
+                </div>
+                <div class="settings-group">
+                  <h4>Wholesale / Retail Pricing</h4>
+                  <div class="field checkbox-field">
+                    <input type="checkbox" id="set-wholesale-enabled">
+                    <label for="set-wholesale-enabled">Enable wholesale / retail toggle on register</label>
+                  </div>
+                  <div id="wholesale-fields">
+                    <div class="wholesale-preview-bar" id="wholesale-preview-bar"></div>
+                    <div class="settings-row-2">
+                      <div class="field">
+                        <label>Retail Mode Label</label>
+                        <input type="text" id="set-retail-label" class="input-full" placeholder="Retail">
+                      </div>
+                      <div class="field">
+                        <label>Wholesale Mode Label</label>
+                        <input type="text" id="set-wholesale-label" class="input-full" placeholder="Wholesale">
+                      </div>
+                    </div>
+                    <div class="field">
+                      <label>Wholesale Discount off Retail Price</label>
+                      <div class="discount-input-row">
+                        <input type="range" id="set-wholesale-discount-slider" min="1" max="60" step="0.5" class="discount-slider">
+                        <div class="discount-number-wrap">
+                          <input type="number" id="set-wholesale-discount" class="input-sm discount-number" min="0" max="100" step="0.5">
+                          <span class="discount-pct-label">%</span>
+                        </div>
+                      </div>
+                      <p class="field-hint">e.g. 15% → a ₱100 retail item sells for ₱85 wholesale</p>
+                    </div>
                   </div>
                 </div>
                 <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
@@ -709,8 +765,9 @@
       <div class="modal-body" id="order-detail-body"></div>
       <div class="modal-footer">
         <button class="btn btn-secondary modal-close" data-modal="modal-order">Close</button>
-        <button class="btn btn-warning" id="btn-refund-order">Refund</button>
         <button class="btn btn-secondary" id="btn-reprint-receipt">Reprint</button>
+        <button class="btn btn-warning" id="btn-void-order">Void</button>
+        <button class="btn btn-danger" id="btn-refund-order">Refund</button>
       </div>
     </div>
   </div>
@@ -741,6 +798,112 @@
       <div class="modal-footer">
         <button class="btn btn-secondary" id="confirm-cancel">Cancel</button>
         <button class="btn btn-danger" id="confirm-ok">Confirm</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stock Adjustment Modal -->
+  <div id="modal-stock" class="modal-overlay hidden">
+    <div class="modal modal-sm">
+      <div class="modal-header">
+        <h3 id="stock-modal-title">Stock Adjustment</h3>
+        <button class="btn-icon modal-close" data-modal="modal-stock">&times;</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="stock-product-id">
+        <div class="stock-product-info" id="stock-product-info"></div>
+        <div class="stock-tabs">
+          <button class="stock-tab active" data-stype="add">+ Add Stock</button>
+          <button class="stock-tab" data-stype="remove">− Remove</button>
+          <button class="stock-tab" data-stype="set">= Set Exact</button>
+        </div>
+        <div class="field" style="margin-top:1rem">
+          <label id="stock-qty-label">Quantity to Add</label>
+          <input type="number" id="stock-qty" class="input-full" min="0" step="1" placeholder="0">
+        </div>
+        <div class="field">
+          <label>Reason / Note *</label>
+          <select id="stock-reason" class="input-full">
+            <option value="">Select reason...</option>
+            <option value="Purchase / Delivery">Purchase / Delivery</option>
+            <option value="Customer Return">Customer Return</option>
+            <option value="Damage / Expired">Damage / Expired</option>
+            <option value="Theft / Loss">Theft / Loss</option>
+            <option value="Inventory Count">Inventory Count</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="field" id="stock-notes-field">
+          <label>Additional Notes</label>
+          <input type="text" id="stock-notes" class="input-full" placeholder="Optional details...">
+        </div>
+        <div class="stock-result-preview" id="stock-result-preview"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-stock">Cancel</button>
+        <button class="btn btn-primary" id="btn-save-stock">Save Adjustment</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Price Override Modal (per cart line) -->
+  <div id="modal-price-override" class="modal-overlay hidden">
+    <div class="modal modal-xs">
+      <div class="modal-header">
+        <h3>Price Override</h3>
+        <button class="btn-icon modal-close" data-modal="modal-price-override">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div id="override-item-name" style="font-weight:600;margin-bottom:0.5rem;color:var(--text-secondary)"></div>
+        <div class="field">
+          <label>Original Price</label>
+          <div id="override-original-price" style="font-size:1rem;font-weight:600;padding:0.4rem 0"></div>
+        </div>
+        <div class="field">
+          <label>New Price *</label>
+          <input type="number" id="override-new-price" class="input-full" min="0" step="0.01" placeholder="0.00">
+        </div>
+        <div class="field">
+          <label>Reason *</label>
+          <select id="override-reason" class="input-full">
+            <option value="">Select reason...</option>
+            <option value="Price Match">Price Match</option>
+            <option value="Damaged / Defective">Damaged / Defective</option>
+            <option value="Promotion / Special">Promotion / Special</option>
+            <option value="Management Approval">Management Approval</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label>Manager PIN *</label>
+          <input type="password" id="override-pin" class="input-full" maxlength="8" inputmode="numeric" placeholder="Enter manager/admin PIN">
+        </div>
+        <input type="hidden" id="override-product-id">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-price-override">Cancel</button>
+        <button class="btn btn-primary" id="btn-apply-override">Apply Override</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Stock History Modal -->
+  <div id="modal-stock-history" class="modal-overlay hidden">
+    <div class="modal">
+      <div class="modal-header">
+        <h3 id="stock-history-title">Stock History</h3>
+        <button class="btn-icon modal-close" data-modal="modal-stock-history">&times;</button>
+      </div>
+      <div class="modal-body" style="padding:0">
+        <div class="table-wrap" style="max-height:400px">
+          <table class="data-table">
+            <thead><tr><th>Date</th><th>Type</th><th>Qty</th><th>Before</th><th>After</th><th>Reason</th><th>By</th></tr></thead>
+            <tbody id="stock-history-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary modal-close" data-modal="modal-stock-history">Close</button>
       </div>
     </div>
   </div>
