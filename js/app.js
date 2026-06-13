@@ -168,7 +168,15 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
   enterPOS();
 });
 
-document.getElementById('btn-lock').addEventListener('click', lockTerminal);
+document.getElementById('login-pin').addEventListener('blur', () => {
+  if (IS_TOUCH_DEVICE) return; // don't fight the on-screen keyboard on phones
+  if (!document.getElementById('screen-login').classList.contains('active')) return;
+  setTimeout(() => {
+    if (document.getElementById('screen-login').classList.contains('active')) {
+      document.getElementById('login-pin').focus();
+    }
+  }, 100);
+});
 
 function lockTerminal(reason = 'manual') {
   AutoLock.cancel();
@@ -181,6 +189,8 @@ function lockTerminal(reason = 'manual') {
   // Focus PIN input immediately
   setTimeout(() => document.getElementById('login-pin').focus(), 100);
 }
+
+document.getElementById('btn-lock').addEventListener('click', () => lockTerminal('manual'));
 
 /* ============================
    AUTO-LOCK / IDLE TIMEOUT
@@ -299,6 +309,9 @@ function showScreen(id) {
   document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.body.classList.remove('loading');
+  if (id === 'screen-login') {
+    setTimeout(() => document.getElementById('login-pin').focus(), 50);
+  }
 }
 
 /* ============================
@@ -830,6 +843,7 @@ async function completeSale() {
 
   audit('SALE', { orderNum, total: fmt(total), method, cashier: App.currentUser.name });
   Sync.queueOrder(order);
+  LocalDashboardSync.pushNow();
 
   hideModal('modal-checkout');
   showReceipt(order);
@@ -998,6 +1012,7 @@ document.getElementById('btn-refund-order').addEventListener('click', async () =
     Store.incrementStock(order.items);
     audit('REFUND', { orderNum: order.orderNum, total: fmt(order.total), by: App.currentUser.name });
     Sync.queueOrderStatusChange(Store.getOrders().find(o => o.id === App.currentOrderId));
+    LocalDashboardSync.pushNow();
     hideModal('modal-order');
     renderOrders();
     toast('Order refunded — stock restored', 'success');
@@ -1023,6 +1038,7 @@ document.getElementById('btn-void-order').addEventListener('click', async () => 
     Store.incrementStock(order.items);
     audit('VOID', { orderNum: order.orderNum, total: fmt(order.total), by: App.currentUser.name, sameDay });
     Sync.queueOrderStatusChange(Store.getOrders().find(o => o.id === App.currentOrderId));
+    LocalDashboardSync.pushNow();
     hideModal('modal-order');
     renderOrders();
     toast('Order voided — stock restored', 'warning');
@@ -1177,6 +1193,7 @@ document.getElementById('btn-save-product').addEventListener('click', () => {
   };
   audit(existingId ? 'UPDATE_PRODUCT' : 'ADD_PRODUCT', { name, price });
   Store.upsertProduct(product);
+  LocalDashboardSync.schedule();
   hideModal('modal-product');
   renderInventory();
   renderCategoryTabs();
@@ -1280,6 +1297,7 @@ document.getElementById('btn-save-stock').addEventListener('click', () => {
   };
   Store.addStockEntry(entry);
   audit('STOCK_ADJUST', { product: p.name, before, after, diff, reason, by: App.currentUser.name });
+  LocalDashboardSync.schedule();
 
   hideModal('modal-stock');
   renderInventory();
@@ -1478,6 +1496,7 @@ document.getElementById('btn-open-shift').addEventListener('click', async () => 
   Store.addShift(shift);
   audit('SHIFT_OPEN', { by: App.currentUser.name, float: fmt(openFloat) });
   Sync.queueShift(shift, 'shift_open');
+  LocalDashboardSync.pushNow();
   renderZReport();
   toast(`Shift opened — Float: ${fmt(openFloat)}`, 'success');
 });
@@ -1498,6 +1517,7 @@ document.getElementById('btn-close-shift').addEventListener('click', async () =>
   }
   audit('SHIFT_CLOSE', { by: App.currentUser.name, shiftId: shift.id });
   if (s) Sync.queueShift(s, 'shift_close');
+  LocalDashboardSync.pushNow();
   renderZReport();
   toast('Shift closed — Z-Report saved', 'success');
   setTimeout(() => printShiftReport(shift.id), 300);
@@ -1661,6 +1681,7 @@ document.getElementById('btn-save-customer').addEventListener('click', () => {
     lastVisit: existing?.lastVisit || null,
   };
   Store.upsertCustomer(customer);
+  LocalDashboardSync.schedule();
   hideModal('modal-customer');
   renderCustomers();
   renderCartCustomers();
@@ -1977,6 +1998,7 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
   };
   Store.saveSettings(settings);
   audit('UPDATE_SETTINGS', 'Settings updated');
+  LocalDashboardSync.pushNow();
   updatePricingToggleUI();
   renderProductGrid();
   AutoLock.reset(); // apply new timeout immediately
@@ -2284,6 +2306,49 @@ function checkLowStockAlerts() {
   }
 }
 
+/* ============================
+   LOCAL DASHBOARD SYNC
+   Pushes a full data snapshot to a small PHP script on the same
+   device (Orange Pi) so the read-only dashboard.html — opened from
+   any phone on the same WiFi — can show live data. No internet
+   required; this is separate from the Google Sheets cloud sync.
+   ============================ */
+const LocalDashboardSync = (() => {
+  let pushTimer = null;
+
+  function buildSnapshot() {
+    const data = Store.exportAll();
+    // Add some precomputed "live" info so the dashboard doesn't need
+    // to recompute everything itself
+    data.liveShift = Store.getOpenShift();
+    data.heldOrders = Store.getHeld().length;
+    data.currentUser = App.currentUser ? { name: App.currentUser.name, role: App.currentUser.role } : null;
+    return data;
+  }
+
+  async function push() {
+    try {
+      await fetch('php/sync.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(buildSnapshot()),
+      });
+    } catch {
+      // Local dashboard sync is best-effort — fail silently
+      // (e.g. PHP not set up yet, or running file:// directly)
+    }
+  }
+
+  // Debounce — wait 1.5s after the last change before pushing,
+  // so rapid changes don't spam requests
+  function schedule() {
+    clearTimeout(pushTimer);
+    pushTimer = setTimeout(push, 1500);
+  }
+
+  return { schedule, pushNow: push };
+})();
+
 
 (async function init() {
   try {
@@ -2294,6 +2359,8 @@ function checkLowStockAlerts() {
     updateHeldBadge();
     checkLowStockAlerts();
     Sync.init();
+    LocalDashboardSync.pushNow(); // initial snapshot
+    setInterval(() => LocalDashboardSync.pushNow(), 10000); // keep dashboard fresh
   } catch (err) {
     // Never leave the user staring at a black screen — show the error
     document.body.classList.remove('loading');

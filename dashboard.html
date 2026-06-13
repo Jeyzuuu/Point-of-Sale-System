@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OrangePOS — Live Dashboard</title>
+  <link rel="stylesheet" href="css/main.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🟠</text></svg>">
+  <style>
+    body {
+      background: var(--bg);
+      min-height: 100vh;
+      padding-bottom: 2rem;
+    }
+    .dash-header {
+      background: #1A1A18;
+      color: #fff;
+      padding: 1rem 1.25rem;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+      flex-wrap: wrap;
+    }
+    .dash-header-left { display: flex; align-items: center; gap: 10px; }
+    .dash-logo-icon { font-size: 1.4rem; color: var(--orange); }
+    .dash-title { font-weight: 700; font-size: 1.05rem; }
+    .dash-subtitle { font-size: 0.75rem; color: rgba(255,255,255,0.5); }
+    .dash-status {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 0.78rem;
+      color: rgba(255,255,255,0.7);
+    }
+    .dash-status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--success);
+      flex-shrink: 0;
+      transition: background 0.3s;
+    }
+    .dash-status-dot.stale { background: var(--warning); }
+    .dash-status-dot.offline { background: var(--danger); }
+
+    .dash-container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 1rem;
+    }
+
+    .dash-section { margin-bottom: 1.25rem; }
+    .dash-section h3 {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--text-muted);
+      margin-bottom: 0.6rem;
+      font-weight: 700;
+    }
+
+    .dash-stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+    .dash-stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 0.9rem 1rem;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .dash-stat-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-muted); font-weight: 600; }
+    .dash-stat-value { font-size: 1.35rem; font-weight: 700; color: var(--text); }
+
+    .dash-shift-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 1rem 1.25rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 1.5rem;
+      align-items: center;
+    }
+    .dash-shift-card.open { border-color: rgba(26,125,69,0.35); background: var(--success-bg); }
+    .dash-shift-item { display: flex; flex-direction: column; gap: 2px; }
+    .dash-shift-item span:first-child { font-size: 0.7rem; text-transform: uppercase; color: var(--text-muted); font-weight: 600; letter-spacing: 0.04em; }
+    .dash-shift-item span:last-child { font-size: 1.05rem; font-weight: 700; }
+
+    .dash-list {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+    }
+    .dash-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 0.7rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.88rem;
+    }
+    .dash-row:last-child { border-bottom: none; }
+    .dash-row-main { flex: 1; min-width: 0; }
+    .dash-row-title { font-weight: 600; }
+    .dash-row-sub { font-size: 0.78rem; color: var(--text-muted); margin-top: 1px; }
+    .dash-row-amount { font-weight: 700; font-size: 0.95rem; white-space: nowrap; }
+    .dash-empty { padding: 1.5rem; text-align: center; color: var(--text-muted); font-size: 0.9rem; }
+
+    .dash-low-stock-qty {
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 100px;
+      font-size: 0.78rem;
+    }
+    .dash-low-stock-qty.out { background: var(--danger-bg); color: var(--danger); }
+    .dash-low-stock-qty.low { background: var(--warning-bg); color: var(--warning); }
+
+    .dash-footer {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.75rem;
+      padding: 1rem;
+    }
+
+    .dash-setup-msg {
+      max-width: 500px;
+      margin: 4rem auto;
+      text-align: center;
+      padding: 2rem;
+      background: var(--surface);
+      border-radius: var(--radius-lg);
+      border: 1px solid var(--border);
+    }
+    .dash-setup-msg h2 { margin-bottom: 0.5rem; }
+    .dash-setup-msg p { color: var(--text-secondary); line-height: 1.6; }
+
+    @media (max-width: 640px) {
+      .dash-stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .dash-shift-card { flex-direction: column; align-items: flex-start; gap: 0.75rem; }
+      .dash-title { font-size: 0.95rem; }
+    }
+  </style>
+</head>
+<body>
+  <div class="dash-header">
+    <div class="dash-header-left">
+      <span class="dash-logo-icon">⬡</span>
+      <div>
+        <div class="dash-title" id="dash-biz-name">OrangePOS — Live Dashboard</div>
+        <div class="dash-subtitle">Read-only · Updates every 5s</div>
+      </div>
+    </div>
+    <div class="dash-status">
+      <span class="dash-status-dot" id="dash-status-dot"></span>
+      <span id="dash-status-text">Connecting...</span>
+    </div>
+  </div>
+
+  <div class="dash-container" id="dash-container">
+    <!-- Populated by dashboard.js -->
+  </div>
+
+  <div class="dash-footer" id="dash-footer"></div>
+
+  <script src="js/dashboard.js"></script>
+</body>
+</html>
