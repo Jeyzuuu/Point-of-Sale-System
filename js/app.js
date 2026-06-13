@@ -170,14 +170,108 @@ document.getElementById('form-login').addEventListener('submit', async (e) => {
 
 document.getElementById('btn-lock').addEventListener('click', lockTerminal);
 
-function lockTerminal() {
-  audit('LOCK', `Terminal locked by "${App.currentUser?.name}"`);
+function lockTerminal(reason = 'manual') {
+  AutoLock.cancel();
+  audit('LOCK', `Terminal locked by "${App.currentUser?.name}" (${reason})`);
   App.currentUser = null;
   Store.clearSession();
   document.getElementById('login-pin').value = '';
   document.getElementById('login-error').classList.add('hidden');
   showScreen('screen-login');
+  // Focus PIN input immediately
+  setTimeout(() => document.getElementById('login-pin').focus(), 100);
 }
+
+/* ============================
+   AUTO-LOCK / IDLE TIMEOUT
+   ============================ */
+const AutoLock = (() => {
+  let idleTimer = null;
+  let warnTimer = null;
+  let countdownInterval = null;
+  let warnEl = null;
+
+  const WARN_SECONDS = 30; // show warning 30s before locking
+
+  function reset() {
+    if (!App.currentUser) return; // not logged in
+    const s = Store.getSettings();
+    if (!s.autoLockEnabled) return;
+    const ms = (s.autoLockMinutes || 5) * 60 * 1000;
+    const warnMs = ms - WARN_SECONDS * 1000;
+
+    cancel();
+
+    // Warning timer
+    if (warnMs > 0) {
+      warnTimer = setTimeout(showWarning, warnMs);
+    }
+    // Lock timer
+    idleTimer = setTimeout(() => {
+      hideWarning();
+      lockTerminal('idle timeout');
+      toast('Terminal locked due to inactivity', 'warning');
+    }, ms);
+  }
+
+  function cancel() {
+    clearTimeout(idleTimer);
+    clearTimeout(warnTimer);
+    clearInterval(countdownInterval);
+    idleTimer = null;
+    warnTimer = null;
+    hideWarning();
+  }
+
+  function showWarning() {
+    // Don't show warning if a modal (like checkout) is open
+    const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
+    if (anyModalOpen) { reset(); return; }
+
+    if (!warnEl) {
+      warnEl = document.createElement('div');
+      warnEl.id = 'autolock-warning';
+      warnEl.className = 'autolock-warning';
+      warnEl.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18">
+          <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        <span>Locking in <strong id="autolock-countdown">${WARN_SECONDS}</strong>s due to inactivity</span>
+        <button id="autolock-stay" class="autolock-stay-btn">I'm here</button>`;
+      document.body.appendChild(warnEl);
+      document.getElementById('autolock-stay').addEventListener('click', () => { reset(); });
+    }
+    warnEl.classList.add('visible');
+
+    let remaining = WARN_SECONDS;
+    countdownInterval = setInterval(() => {
+      remaining--;
+      const el = document.getElementById('autolock-countdown');
+      if (el) el.textContent = remaining;
+      if (remaining <= 0) clearInterval(countdownInterval);
+    }, 1000);
+  }
+
+  function hideWarning() {
+    clearInterval(countdownInterval);
+    if (warnEl) warnEl.classList.remove('visible');
+  }
+
+  // Track any user activity — mouse, touch, keyboard
+  function attachListeners() {
+    const events = ['mousemove', 'mousedown', 'touchstart', 'keydown', 'scroll'];
+    events.forEach(evt => {
+      document.addEventListener(evt, () => {
+        if (App.currentUser) reset();
+      }, { passive: true });
+    });
+  }
+
+  return { reset, cancel, attachListeners };
+})();
+
+// Start auto-lock listeners once on page load
+AutoLock.attachListeners();
 
 function enterPOS() {
   const user = App.currentUser;
@@ -197,6 +291,7 @@ function enterPOS() {
   setTimeout(maintainSearchFocus, 100);
   setTimeout(checkLowStockAlerts, 200);
   setTimeout(updatePricingToggleUI, 50);
+  AutoLock.reset();
 }
 
 function showScreen(id) {
@@ -1796,6 +1891,9 @@ function loadSettings() {
   document.getElementById('set-wholesale-label').value = s.wholesaleLabel || 'Wholesale';
   document.getElementById('set-wholesale-discount').value = s.wholesaleDiscount ?? 15;
   document.getElementById('set-wholesale-discount-slider').value = s.wholesaleDiscount ?? 15;
+  document.getElementById('set-autolock-enabled').checked = s.autoLockEnabled !== false;
+  document.getElementById('set-autolock-minutes').value = s.autoLockMinutes ?? 5;
+  document.getElementById('set-autolock-slider').value = s.autoLockMinutes ?? 5;
   toggleWholesaleFields();
   updateWholesalePreview();
 }
@@ -1851,11 +1949,14 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
     retailLabel: document.getElementById('set-retail-label').value.trim() || 'Retail',
     wholesaleLabel: document.getElementById('set-wholesale-label').value.trim() || 'Wholesale',
     wholesaleDiscount: parseFloat(document.getElementById('set-wholesale-discount').value) || 0,
+    autoLockEnabled: document.getElementById('set-autolock-enabled').checked,
+    autoLockMinutes: parseInt(document.getElementById('set-autolock-minutes').value) || 5,
   };
   Store.saveSettings(settings);
   audit('UPDATE_SETTINGS', 'Settings updated');
   updatePricingToggleUI();
   renderProductGrid();
+  AutoLock.reset(); // apply new timeout immediately
   toast('Settings saved', 'success');
 });
 
@@ -2132,10 +2233,24 @@ function checkLowStockAlerts() {
 
 
 (async function init() {
-  // Always start on login screen — never auto-resume a session
-  Store.clearSession();
-  await seedDefaultData();
-  await initAuth();
-  updateHeldBadge();
-  checkLowStockAlerts();
+  try {
+    // Always start on login screen — never auto-resume a session
+    Store.clearSession();
+    await seedDefaultData();
+    await initAuth();
+    updateHeldBadge();
+    checkLowStockAlerts();
+  } catch (err) {
+    // Never leave the user staring at a black screen — show the error
+    document.body.classList.remove('loading');
+    const errBox = document.createElement('div');
+    errBox.style.cssText = 'position:fixed;inset:0;background:#1A1A18;color:#fff;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:12px;font-family:sans-serif;padding:2rem;text-align:center;z-index:999999';
+    errBox.innerHTML = `
+      <div style="font-size:2rem">⚠️</div>
+      <h2 style="margin:0">OrangePOS failed to start</h2>
+      <p style="color:#ccc;max-width:480px">${escHtml(err.message || String(err))}</p>
+      <button onclick="location.reload()" style="background:#E8650A;color:#fff;border:none;padding:0.6rem 1.5rem;border-radius:8px;font-size:1rem;cursor:pointer">Reload</button>`;
+    document.body.appendChild(errBox);
+    console.error('OrangePOS init error:', err);
+  }
 })();
