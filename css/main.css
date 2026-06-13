@@ -1401,3 +1401,245 @@ body.loading::after {
 
 /* Status: voided */
 .status-voided { background: var(--danger-bg); color: var(--danger); }
+
+/* ============================
+   AUTO-LOCK WARNING BANNER
+   ============================ */
+.autolock-warning {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: #1A1A18;
+  color: #fff;
+  padding: 0.85rem 1.25rem;
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.9rem;
+  z-index: 9998;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.25s, transform 0.25s;
+  white-space: nowrap;
+}
+.autolock-warning.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: auto;
+}
+.autolock-warning svg { color: #FBBF24; flex-shrink: 0; }
+.autolock-warning strong { color: #FBBF24; font-size: 1.05em; }
+.autolock-stay-btn {
+  background: var(--orange);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 5px 14px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-left: 4px;
+  transition: background 0.12s;
+}
+.autolock-stay-btn:hover { background: var(--orange-dark); }
+
+/* ============================================================
+   RESPONSIVE / MOBILE SUPPORT
+   For remote viewing (Reports, Orders, Z-Report, Inventory,
+   Customers, Admin) on phones over LAN. The Register is usable
+   too, but optimized primarily for tablet/desktop kiosk use.
+   ============================================================ */
+
+@media (max-width: 860px) {
+
+  html, body { font-size: 15px; }
+
+  /* ---- Login screen ---- */
+  .login-wrap {
+    width: 100%;
+    max-width: 360px;
+    margin: 0 1rem;
+    padding: 2rem 1.5rem;
+  }
+
+  /* ---- Layout: sidebar becomes a bottom tab bar ---- */
+  .pos-layout {
+    flex-direction: column;
+  }
+  .pos-nav {
+    width: 100%;
+    height: auto;
+    flex-direction: row;
+    order: 2; /* bottom of screen */
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 500;
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .nav-logo { display: none; } /* save vertical space on mobile */
+  .nav-links {
+    display: flex;
+    flex-direction: row;
+    overflow-x: auto;
+    padding: 0.25rem 0.25rem;
+    flex: 1;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav-links li { flex-shrink: 0; }
+  .nav-link {
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.65rem;
+    border-radius: 8px;
+    white-space: nowrap;
+  }
+  .nav-link svg { width: 20px; height: 20px; }
+  .nav-link.active { border-radius: 8px; }
+  .nav-bottom {
+    flex-direction: column;
+    padding: 0.4rem;
+    border-top: none;
+    border-left: 1px solid rgba(255,255,255,0.08);
+    flex-shrink: 0;
+    width: auto;
+  }
+  .nav-user { display: none; } /* hide user details, save space */
+  .nav-user-avatar { width: 26px; height: 26px; font-size: 0.6rem; }
+
+  /* ---- Main content area: leave room for bottom nav ---- */
+  .pos-main {
+    order: 1;
+    padding-bottom: 64px; /* height of bottom nav */
+    height: auto;
+    min-height: calc(100vh - 64px);
+  }
+  .view { height: auto; min-height: calc(100vh - 64px); }
+
+  /* ---- Register: stack product grid and cart vertically ---- */
+  .pos-register {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto;
+    height: auto;
+  }
+  .register-products { min-height: 50vh; }
+  .register-cart {
+    border-left: none;
+    border-top: 2px solid var(--border);
+    max-height: 70vh;
+  }
+  .pricing-toggle-wrap { order: -1; width: 100%; justify-content: center; }
+  .cart-header { flex-wrap: wrap; }
+  .cart-header-right { width: 100%; justify-content: space-between; }
+
+  /* ---- View headers & toolbars wrap nicely ---- */
+  .view-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+  .view-toolbar { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
+  .view-toolbar > * { flex: 1 1 auto; min-width: 100px; }
+
+  /* ---- Reports: single column stats ---- */
+  .reports-grid {
+    grid-template-columns: repeat(2, 1fr);
+    padding: 0.75rem;
+  }
+  .stat-value { font-size: 1.15rem; }
+
+  /* ---- Z-Report stats ---- */
+  .zreport-stats { grid-template-columns: repeat(2, 1fr); }
+  .zreport-stat:nth-child(2n) { border-right: none; }
+  .zreport-stat:nth-child(3n) { border-right: 1px solid var(--border); }
+
+  /* ---- Admin tabs: horizontal scroll ---- */
+  .admin-tabs {
+    overflow-x: auto;
+    padding: 0 0.75rem;
+    -webkit-overflow-scrolling: touch;
+  }
+  .admin-tab { padding: 0.65rem 0.85rem; font-size: 0.82rem; }
+  .admin-panel { padding: 0.85rem; }
+  .backup-actions { grid-template-columns: 1fr; }
+  .settings-row-2 { grid-template-columns: 1fr; }
+
+  /* ---- Tables: allow horizontal scroll, smaller text ---- */
+  .data-table { font-size: 0.82rem; }
+  .data-table th, .data-table td { padding: 0.5rem 0.6rem; }
+
+  /* ---- Modals: near full-screen on mobile ---- */
+  .modal-overlay { padding: 0; align-items: flex-end; }
+  .modal {
+    max-width: 100%;
+    width: 100%;
+    max-height: 92vh;
+    border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+  }
+  .modal-sm, .modal-xs { max-width: 100%; }
+  .form-grid { grid-template-columns: 1fr; }
+  .pay-method-grid { grid-template-columns: repeat(3, 1fr); }
+
+  /* ---- Stock alert banner ---- */
+  .stock-alert-banner { font-size: 0.78rem; flex-wrap: wrap; }
+  .banner-goto-inventory { margin-left: auto; }
+
+  /* ---- Auto-lock warning sits above bottom nav ---- */
+  .autolock-warning { bottom: 76px; max-width: 92vw; white-space: normal; }
+}
+
+/* Extra-small phones */
+@media (max-width: 420px) {
+  .reports-grid { grid-template-columns: 1fr; }
+  .zreport-stats { grid-template-columns: 1fr; }
+  .zreport-stat:nth-child(n) { border-right: none; }
+  .pay-method-grid { grid-template-columns: repeat(2, 1fr); }
+  .nav-link span:not(.badge) { font-size: 0.6rem; }
+}
+
+/* ============================
+   CLOUD SYNC
+   ============================ */
+.sync-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin: 0 0.75rem 0.5rem;
+  padding: 5px 10px;
+  border-radius: 100px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-align: center;
+}
+.sync-badge.synced { background: rgba(26,125,69,0.15); color: #4ADE80; }
+.sync-badge.pending { background: rgba(245,158,11,0.15); color: #FBBF24; }
+.sync-badge.error { background: rgba(192,41,42,0.15); color: #F87171; }
+
+.cloudsync-status-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 0.5rem;
+  flex-wrap: wrap;
+}
+#cloudsync-pending-info {
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+@media (max-width: 860px) {
+  .sync-badge {
+    position: static;
+    margin: 4px 8px;
+    font-size: 0.65rem;
+    padding: 3px 8px;
+  }
+  /* On mobile nav (bottom bar), put sync badge inline with nav-bottom */
+  .pos-nav .sync-badge { order: -1; }
+}

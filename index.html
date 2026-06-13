@@ -67,6 +67,7 @@
               <span>Z-Report</span>
             </a></li>
           </ul>
+          <div id="sync-status-badge" class="sync-badge hidden"></div>
           <div class="nav-bottom">
             <div class="nav-user" id="nav-user">
               <div class="nav-user-avatar" id="nav-user-avatar">CA</div>
@@ -429,7 +430,23 @@
                   </div>
                 </div>
                 <div class="settings-group">
-                  <h4>Wholesale / Retail Pricing</h4>
+                  <h4>Security &amp; Auto-Lock</h4>
+                  <div class="field checkbox-field">
+                    <input type="checkbox" id="set-autolock-enabled">
+                    <label for="set-autolock-enabled">Auto-lock terminal when idle</label>
+                  </div>
+                  <div class="field">
+                    <label>Lock after how many minutes of no activity</label>
+                    <div style="display:flex;align-items:center;gap:10px">
+                      <input type="range" id="set-autolock-slider" min="1" max="60" step="1" class="discount-slider" style="flex:1"
+                        oninput="document.getElementById('set-autolock-minutes').value=this.value">
+                      <input type="number" id="set-autolock-minutes" class="input-sm" min="1" max="60" style="width:60px;text-align:center"
+                        oninput="document.getElementById('set-autolock-slider').value=this.value">
+                      <span style="font-size:0.9rem;color:var(--text-secondary)">min</span>
+                    </div>
+                    <p class="field-hint">A 30-second warning appears before locking. Recommended: 3–10 minutes.</p>
+                  </div>
+                </div>
                   <div class="field checkbox-field">
                     <input type="checkbox" id="set-wholesale-enabled">
                     <label for="set-wholesale-enabled">Enable wholesale / retail toggle on register</label>
@@ -459,6 +476,33 @@
                     </div>
                   </div>
                 </div>
+
+                <div class="settings-group">
+                  <h4>Cloud Sync — Remote Sales Monitoring</h4>
+                  <p class="field-hint" style="margin-top:0;margin-bottom:0.75rem">
+                    Sends a live feed of sales, voids, refunds, and shift events to a Google Sheet, so the owner/manager can check sales from anywhere with internet — not just on the same WiFi. Uses a free Google account, no monthly cost.
+                  </p>
+                  <div class="field checkbox-field">
+                    <input type="checkbox" id="set-cloudsync-enabled">
+                    <label for="set-cloudsync-enabled">Enable Cloud Sync</label>
+                  </div>
+                  <div id="cloudsync-fields">
+                    <div class="field">
+                      <label>Store Name (shown in the sheet)</label>
+                      <input type="text" id="set-cloudsync-storename" class="input-full" placeholder="e.g. Main Branch">
+                    </div>
+                    <div class="field">
+                      <label>Google Apps Script Web App URL</label>
+                      <input type="text" id="set-cloudsync-url" class="input-full" placeholder="https://script.google.com/macros/s/XXXXX/exec">
+                      <p class="field-hint">Paste the URL you get after deploying the Apps Script as a Web App. See setup guide for step-by-step instructions.</p>
+                    </div>
+                    <div class="cloudsync-status-row">
+                      <button class="btn btn-secondary btn-sm" id="btn-test-sync" type="button">Send Test Event</button>
+                      <span id="cloudsync-pending-info"></span>
+                    </div>
+                  </div>
+                </div>
+
                 <button class="btn btn-primary" id="btn-save-settings">Save Settings</button>
               </div>
             </div>
@@ -914,6 +958,7 @@
   <!-- Print Styles are loaded separately -->
   <script src="js/crypto.js"></script>
   <script src="js/store.js"></script>
+  <script src="js/sync.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

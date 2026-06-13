@@ -291,6 +291,7 @@ function enterPOS() {
   setTimeout(maintainSearchFocus, 100);
   setTimeout(checkLowStockAlerts, 200);
   setTimeout(updatePricingToggleUI, 50);
+  Sync.updateSyncBadge();
   AutoLock.reset();
 }
 
@@ -828,6 +829,7 @@ async function completeSale() {
   }
 
   audit('SALE', { orderNum, total: fmt(total), method, cashier: App.currentUser.name });
+  Sync.queueOrder(order);
 
   hideModal('modal-checkout');
   showReceipt(order);
@@ -995,6 +997,7 @@ document.getElementById('btn-refund-order').addEventListener('click', async () =
     Store.updateOrderStatus(App.currentOrderId, 'refunded', { refundedAt: Date.now(), refundedBy: App.currentUser.name });
     Store.incrementStock(order.items);
     audit('REFUND', { orderNum: order.orderNum, total: fmt(order.total), by: App.currentUser.name });
+    Sync.queueOrderStatusChange(Store.getOrders().find(o => o.id === App.currentOrderId));
     hideModal('modal-order');
     renderOrders();
     toast('Order refunded — stock restored', 'success');
@@ -1019,6 +1022,7 @@ document.getElementById('btn-void-order').addEventListener('click', async () => 
     Store.updateOrderStatus(App.currentOrderId, 'voided', { voidedAt: Date.now(), voidedBy: App.currentUser.name });
     Store.incrementStock(order.items);
     audit('VOID', { orderNum: order.orderNum, total: fmt(order.total), by: App.currentUser.name, sameDay });
+    Sync.queueOrderStatusChange(Store.getOrders().find(o => o.id === App.currentOrderId));
     hideModal('modal-order');
     renderOrders();
     toast('Order voided — stock restored', 'warning');
@@ -1473,6 +1477,7 @@ document.getElementById('btn-open-shift').addEventListener('click', async () => 
   };
   Store.addShift(shift);
   audit('SHIFT_OPEN', { by: App.currentUser.name, float: fmt(openFloat) });
+  Sync.queueShift(shift, 'shift_open');
   renderZReport();
   toast(`Shift opened — Float: ${fmt(openFloat)}`, 'success');
 });
@@ -1492,6 +1497,7 @@ document.getElementById('btn-close-shift').addEventListener('click', async () =>
     Store.saveShifts(shifts);
   }
   audit('SHIFT_CLOSE', { by: App.currentUser.name, shiftId: shift.id });
+  if (s) Sync.queueShift(s, 'shift_close');
   renderZReport();
   toast('Shift closed — Z-Report saved', 'success');
   setTimeout(() => printShiftReport(shift.id), 300);
@@ -1894,8 +1900,22 @@ function loadSettings() {
   document.getElementById('set-autolock-enabled').checked = s.autoLockEnabled !== false;
   document.getElementById('set-autolock-minutes').value = s.autoLockMinutes ?? 5;
   document.getElementById('set-autolock-slider').value = s.autoLockMinutes ?? 5;
+  document.getElementById('set-cloudsync-enabled').checked = s.cloudSyncEnabled === true;
+  document.getElementById('set-cloudsync-storename').value = s.cloudSyncStoreName || '';
+  document.getElementById('set-cloudsync-url').value = s.cloudSyncUrl || '';
   toggleWholesaleFields();
   updateWholesalePreview();
+  updateSyncPendingInfo();
+}
+
+function updateSyncPendingInfo() {
+  const el = document.getElementById('cloudsync-pending-info');
+  if (!el) return;
+  const s = Store.getSettings();
+  if (!s.cloudSyncEnabled) { el.textContent = ''; return; }
+  const pending = Sync.queueLength();
+  el.textContent = pending === 0 ? '✓ All events synced' : `${pending} event(s) waiting to sync`;
+  el.style.color = pending === 0 ? 'var(--success)' : 'var(--warning)';
 }
 
 function toggleWholesaleFields() {
@@ -1951,13 +1971,36 @@ document.getElementById('btn-save-settings').addEventListener('click', () => {
     wholesaleDiscount: parseFloat(document.getElementById('set-wholesale-discount').value) || 0,
     autoLockEnabled: document.getElementById('set-autolock-enabled').checked,
     autoLockMinutes: parseInt(document.getElementById('set-autolock-minutes').value) || 5,
+    cloudSyncEnabled: document.getElementById('set-cloudsync-enabled').checked,
+    cloudSyncStoreName: document.getElementById('set-cloudsync-storename').value.trim(),
+    cloudSyncUrl: document.getElementById('set-cloudsync-url').value.trim(),
   };
   Store.saveSettings(settings);
   audit('UPDATE_SETTINGS', 'Settings updated');
   updatePricingToggleUI();
   renderProductGrid();
   AutoLock.reset(); // apply new timeout immediately
+  Sync.init(); // re-evaluate sync state with new settings
+  updateSyncPendingInfo();
   toast('Settings saved', 'success');
+});
+
+document.getElementById('btn-test-sync').addEventListener('click', async () => {
+  const url = document.getElementById('set-cloudsync-url').value.trim();
+  if (!url) { toast('Enter the Apps Script Web App URL first', 'error'); return; }
+  // Save current values temporarily so testConnection picks up the right URL/store name
+  const settings = Store.getSettings();
+  settings.cloudSyncUrl = url;
+  settings.cloudSyncStoreName = document.getElementById('set-cloudsync-storename').value.trim();
+  Store.saveSettings(settings);
+
+  toast('Sending test event...', '');
+  const ok = await Sync.testConnection();
+  if (ok) {
+    toast('Test event sent — check your Google Sheet for a "test" row', 'success');
+  } else {
+    toast('Failed to send — check the URL and your internet connection', 'error');
+  }
 });
 
 // Categories
@@ -2075,6 +2118,14 @@ document.querySelectorAll('.modal-overlay').forEach(overlay => {
    BARCODE SCANNER + SEARCH FOCUS
    ============================ */
 
+// Detect whether this device should use "kiosk" behaviors (USB scanner
+// auto-focus, etc.) vs "remote viewing" behaviors (phone/tablet touch).
+// On touch devices, constantly stealing focus into the search box would
+// pop up the on-screen keyboard and break navigation — so we disable it.
+const IS_TOUCH_DEVICE = window.matchMedia('(pointer: coarse)').matches
+  || ('ontouchstart' in window)
+  || navigator.maxTouchPoints > 0;
+
 // Elements that should be allowed to keep focus — never steal from these
 function userIsInteracting() {
   if (window._qtyFocused) return true;
@@ -2089,6 +2140,7 @@ function userIsInteracting() {
 }
 
 function maintainSearchFocus() {
+  if (IS_TOUCH_DEVICE) return; // never auto-focus on phones/tablets (would pop keyboard)
   if (App.currentView !== 'pos') return;
   if (userIsInteracting()) return;
   const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
@@ -2100,6 +2152,7 @@ function maintainSearchFocus() {
 // Re-focus search when clicking on inert areas (product grid, cart bg, etc.)
 // but NOT when the click lands on or inside an interactive element
 document.addEventListener('click', (e) => {
+  if (IS_TOUCH_DEVICE) return;
   if (App.currentView !== 'pos') return;
   const anyModalOpen = [...document.querySelectorAll('.modal-overlay')].some(m => !m.classList.contains('hidden'));
   if (anyModalOpen) return;
@@ -2240,6 +2293,7 @@ function checkLowStockAlerts() {
     await initAuth();
     updateHeldBadge();
     checkLowStockAlerts();
+    Sync.init();
   } catch (err) {
     // Never leave the user staring at a black screen — show the error
     document.body.classList.remove('loading');

@@ -33,6 +33,11 @@ const Store = (() => {
     retailLabel: 'Retail',
     wholesaleLabel: 'Wholesale',
     wholesaleDiscount: 15,
+    autoLockEnabled: true,
+    autoLockMinutes: 5,
+    cloudSyncEnabled: false,
+    cloudSyncUrl: '',
+    cloudSyncStoreName: '',
   };
 
   function _get(key) {
