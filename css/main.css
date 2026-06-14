@@ -1643,3 +1643,50 @@ body.loading::after {
   /* On mobile nav (bottom bar), put sync badge inline with nav-bottom */
   .pos-nav .sync-badge { order: -1; }
 }
+
+/* ============================
+   BULK ACTION BAR (Inventory)
+   ============================ */
+.bulk-action-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0.6rem 1rem;
+  background: var(--info-bg);
+  border-bottom: 1px solid rgba(17,85,170,0.2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.bulk-count {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: var(--info);
+  margin-right: 4px;
+}
+
+/* Checkbox column in table */
+.data-table td:first-child,
+.data-table th:first-child {
+  padding-right: 4px;
+}
+.inv-row-check {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--orange);
+}
+#inventory-select-all {
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  accent-color: var(--orange);
+}
+/* Highlight selected rows */
+.data-table tbody tr:has(.inv-row-check:checked) td {
+  background: var(--orange-bg);
+}
+
+@media (max-width: 860px) {
+  .bulk-action-bar { gap: 6px; }
+  .bulk-action-bar .btn { font-size: 0.78rem; padding: 0.3rem 0.55rem; }
+}
