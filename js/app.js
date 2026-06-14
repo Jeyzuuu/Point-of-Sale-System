@@ -1105,7 +1105,8 @@ function renderInventory() {
     const isLow = p.trackStock !== false && p.stock <= lowQty && p.stock > 0;
     const isOut = p.trackStock !== false && p.stock <= 0;
     const stockStatus = isOut ? 'status-badge status-voided' : isLow ? 'status-badge status-low' : '';
-    return `<tr>
+    return `<tr data-product-id="${p.id}">
+      <td><input type="checkbox" class="inv-row-check" data-id="${p.id}"></td>
       <td><code>${escHtml(p.sku || '—')}</code></td>
       <td><strong>${escHtml(p.name)}</strong></td>
       <td>${cat ? escHtml(cat.name) : '—'}</td>
@@ -1143,10 +1144,120 @@ function renderInventory() {
   tbody.querySelectorAll('[data-history-product]').forEach(btn => {
     btn.addEventListener('click', () => openStockHistory(btn.dataset.historyProduct));
   });
+
+  // ---- Checkbox / bulk selection ----
+  // Reset select-all state whenever we re-render
+  const selectAll = document.getElementById('inventory-select-all');
+  selectAll.checked = false;
+  selectAll.indeterminate = false;
+  updateBulkBar();
 }
 
 document.getElementById('inventory-search').addEventListener('input', renderInventory);
 document.getElementById('inventory-cat-filter').addEventListener('change', renderInventory);
+
+/* ---- Inventory checkbox delegation ---- */
+// These listeners attach ONCE to stable parent elements and work through
+// any number of tbody re-renders — critical for kiosk mode where
+// dynamically re-attached DOM nodes lose their inline listeners
+document.getElementById('inventory-tbody').addEventListener('change', (e) => {
+  if (e.target.classList.contains('inv-row-check')) {
+    updateBulkBar();
+  }
+});
+
+document.getElementById('inventory-select-all').addEventListener('change', (e) => {
+  const checked = e.target.checked;
+  document.querySelectorAll('#inventory-tbody .inv-row-check').forEach(cb => {
+    cb.checked = checked;
+  });
+  updateBulkBar();
+});
+
+/* ---- Bulk action helpers ---- */
+function getSelectedProductIds() {
+  return [...document.querySelectorAll('#inventory-tbody .inv-row-check:checked')].map(cb => cb.dataset.id);
+}
+
+function updateBulkBar() {
+  const checks = document.querySelectorAll('#inventory-tbody .inv-row-check');
+  const selected = document.querySelectorAll('#inventory-tbody .inv-row-check:checked');
+  const bar = document.getElementById('bulk-action-bar');
+  const selectAll = document.getElementById('inventory-select-all');
+  const count = selected.length;
+
+  bar.classList.toggle('hidden', count === 0);
+
+  document.getElementById('bulk-selected-count').textContent =
+    `${count} product${count !== 1 ? 's' : ''} selected`;
+
+  if (count === 0) {
+    selectAll.checked = false;
+    selectAll.indeterminate = false;
+  } else if (count === checks.length) {
+    selectAll.checked = true;
+    selectAll.indeterminate = false;
+  } else {
+    selectAll.checked = false;
+    selectAll.indeterminate = true;
+  }
+}
+
+document.getElementById('btn-bulk-deselect').addEventListener('click', () => {
+  document.querySelectorAll('#inventory-tbody .inv-row-check').forEach(cb => { cb.checked = false; });
+  document.getElementById('inventory-select-all').checked = false;
+  document.getElementById('inventory-select-all').indeterminate = false;
+  updateBulkBar();
+});
+
+document.getElementById('btn-bulk-delete').addEventListener('click', async () => {
+  const ids = getSelectedProductIds();
+  if (!ids.length) return;
+  if (!await confirm('Delete Products', `Permanently delete ${ids.length} selected product${ids.length !== 1 ? 's' : ''}? This cannot be undone.`)) return;
+  ids.forEach(id => {
+    const p = Store.getProducts().find(x => x.id === id);
+    audit('DELETE_PRODUCT', { id, name: p?.name });
+    Store.deleteProduct(id);
+  });
+  LocalDashboardSync.schedule();
+  renderInventory();
+  renderCategoryTabs();
+  renderProductGrid();
+  checkLowStockAlerts();
+  toast(`${ids.length} product${ids.length !== 1 ? 's' : ''} deleted`, 'success');
+});
+
+document.getElementById('btn-bulk-activate').addEventListener('click', async () => {
+  const ids = getSelectedProductIds();
+  if (!ids.length) return;
+  const products = Store.getProducts();
+  ids.forEach(id => {
+    const p = products.find(x => x.id === id);
+    if (p) { p.active = true; p.updatedAt = Date.now(); }
+  });
+  Store.saveProducts(products);
+  audit('BULK_ACTIVATE', { count: ids.length });
+  LocalDashboardSync.schedule();
+  renderInventory();
+  renderProductGrid();
+  toast(`${ids.length} product${ids.length !== 1 ? 's' : ''} set to Active`, 'success');
+});
+
+document.getElementById('btn-bulk-deactivate').addEventListener('click', async () => {
+  const ids = getSelectedProductIds();
+  if (!ids.length) return;
+  const products = Store.getProducts();
+  ids.forEach(id => {
+    const p = products.find(x => x.id === id);
+    if (p) { p.active = false; p.updatedAt = Date.now(); }
+  });
+  Store.saveProducts(products);
+  audit('BULK_DEACTIVATE', { count: ids.length });
+  LocalDashboardSync.schedule();
+  renderInventory();
+  renderProductGrid();
+  toast(`${ids.length} product${ids.length !== 1 ? 's' : ''} set to Inactive`, 'warning');
+});
 
 function openProductModal(productId) {
   return (e) => {
@@ -1822,9 +1933,16 @@ function renderAdmin() {
 document.querySelectorAll('.admin-tab').forEach(tab => {
   tab.addEventListener('click', () => {
     document.querySelectorAll('.admin-tab').forEach(t => t.classList.remove('active'));
-    document.querySelectorAll('.admin-panel').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.admin-panel').forEach(p => {
+      p.classList.remove('active');
+      p.scrollTop = 0; // reset scroll so panel always opens at the top
+    });
     tab.classList.add('active');
-    document.getElementById('admin-' + tab.dataset.tab).classList.add('active');
+    const panel = document.getElementById('admin-' + tab.dataset.tab);
+    if (panel) {
+      panel.classList.add('active');
+      panel.scrollTop = 0;
+    }
   });
 });
 

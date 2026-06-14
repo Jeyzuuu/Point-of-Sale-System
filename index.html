@@ -227,10 +227,19 @@
                 <button class="btn btn-primary btn-sm" id="btn-add-product">+ Add Product</button>
               </div>
             </div>
+            <!-- Bulk action bar — hidden until at least one checkbox is ticked -->
+            <div id="bulk-action-bar" class="bulk-action-bar hidden">
+              <span id="bulk-selected-count" class="bulk-count">0 selected</span>
+              <button class="btn btn-secondary btn-sm" id="btn-bulk-deselect">Deselect All</button>
+              <button class="btn btn-sm" id="btn-bulk-activate" style="border-color:var(--success);color:var(--success)">Set Active</button>
+              <button class="btn btn-sm" id="btn-bulk-deactivate" style="border-color:var(--warning);color:var(--warning)">Set Inactive</button>
+              <button class="btn btn-sm btn-danger" id="btn-bulk-delete">Delete Selected</button>
+            </div>
             <div class="table-wrap">
               <table class="data-table" id="inventory-table">
                 <thead>
                   <tr>
+                    <th style="width:36px"><input type="checkbox" id="inventory-select-all" title="Select all"></th>
                     <th>SKU</th>
                     <th>Name</th>
                     <th>Category</th>
@@ -447,6 +456,8 @@
                     <p class="field-hint">A 30-second warning appears before locking. Recommended: 3–10 minutes.</p>
                   </div>
                 </div>
+                <div class="settings-group">
+                  <h4>Wholesale / Retail Pricing</h4>
                   <div class="field checkbox-field">
                     <input type="checkbox" id="set-wholesale-enabled">
                     <label for="set-wholesale-enabled">Enable wholesale / retail toggle on register</label>
