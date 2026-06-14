@@ -749,6 +749,8 @@ function openCheckout() {
   document.getElementById('checkout-note').value = '';
   document.getElementById('ewallet-ref').value = '';
   document.getElementById('card-last4').value = '';
+  document.getElementById('ewallet-amount-received').value = '';
+  document.getElementById('card-amount-received').value = '';
   document.getElementById('ewallet-total-display').textContent = fmt(total);
   // Reset payment method to cash
   document.querySelectorAll('.pay-method').forEach(b => b.classList.remove('active'));
@@ -830,6 +832,13 @@ async function completeSale() {
     cashTendered: method === 'cash' ? parseFloat(document.getElementById('cash-tendered').value) || 0 : total,
     paymentRef: (method === 'gcash' || method === 'maya') ? document.getElementById('ewallet-ref').value.trim() : '',
     cardLast4: method === 'card' ? document.getElementById('card-last4').value.trim() : '',
+    amountReceived: method === 'cash'
+      ? (parseFloat(document.getElementById('cash-tendered').value) || 0)
+      : method === 'card'
+        ? (parseFloat(document.getElementById('card-amount-received').value) || total)
+        : (method === 'gcash' || method === 'maya')
+          ? (parseFloat(document.getElementById('ewallet-amount-received').value) || total)
+          : total,
     note: document.getElementById('checkout-note').value,
     status: 'completed',
   };
@@ -891,6 +900,8 @@ function showReceipt(order) {
     <div class="receipt-row"><span>Payment (${escHtml(order.paymentMethod.toUpperCase())})</span><span>${fmt(order.cashTendered)}</span></div>
     ${order.paymentRef ? `<div class="receipt-row"><span>Ref #</span><span>${escHtml(order.paymentRef)}</span></div>` : ''}
     ${order.cardLast4 ? `<div class="receipt-row"><span>Card</span><span>**** ${escHtml(order.cardLast4)}</span></div>` : ''}
+    ${order.paymentMethod !== 'cash' && order.amountReceived && order.amountReceived !== order.total
+      ? `<div class="receipt-row"><span>Amt Received</span><span>${fmt(order.amountReceived)}</span></div>` : ''}
     ${order.paymentMethod === 'cash' ? `<div class="receipt-row"><span>Change</span><span>${fmt(Math.max(0, change))}</span></div>` : ''}
     ${order.note ? `<div class="receipt-divider"></div><div style="font-size:0.78rem">Note: ${escHtml(order.note)}</div>` : ''}
     <div class="receipt-divider"></div>
@@ -968,6 +979,7 @@ function openOrderDetail(orderId) {
       <div class="checkout-line"><span>Payment</span><span style="text-transform:capitalize">${escHtml(order.paymentMethod)}</span></div>
       ${order.paymentRef ? `<div class="checkout-line"><span>Ref #</span><span>${escHtml(order.paymentRef)}</span></div>` : ''}
       ${order.cardLast4 ? `<div class="checkout-line"><span>Card</span><span>**** ${escHtml(order.cardLast4)}</span></div>` : ''}
+      ${order.amountReceived ? `<div class="checkout-line"><span>Amount Received</span><span>${fmt(order.amountReceived)}</span></div>` : ''}
       <div class="checkout-line"><span>Status</span><span class="status-badge status-${order.status}">${capitalizeFirst(order.status)}</span></div>
       ${order.voidedBy ? `<div class="checkout-line"><span>Voided by</span><span>${escHtml(order.voidedBy)} — ${fmtDate(order.voidedAt)}</span></div>` : ''}
       ${order.refundedBy ? `<div class="checkout-line"><span>Refunded by</span><span>${escHtml(order.refundedBy)} — ${fmtDate(order.refundedAt)}</span></div>` : ''}
@@ -988,8 +1000,12 @@ function openOrderDetail(orderId) {
       ${order.discountAmt > 0 ? `<div class="checkout-line"><span>Discount (${order.discountType})</span><span>-${fmt(order.discountAmt)}</span></div>` : ''}
       <div class="checkout-line"><span>VAT</span><span>${fmt(order.taxAmt)}</span></div>
       <div class="checkout-line checkout-total"><span>Total</span><span>${fmt(order.total)}</span></div>
-      ${order.paymentMethod === 'cash' ? `<div class="checkout-line"><span>Tendered</span><span>${fmt(order.cashTendered)}</span></div>
-      <div class="checkout-line"><span>Change</span><span>${fmt(Math.max(0, order.cashTendered - order.total))}</span></div>` : ''}
+      ${order.paymentMethod === 'cash'
+        ? `<div class="checkout-line"><span>Cash Tendered</span><span>${fmt(order.cashTendered)}</span></div>
+           <div class="checkout-line"><span>Change</span><span>${fmt(Math.max(0, order.cashTendered - order.total))}</span></div>`
+        : order.amountReceived
+          ? `<div class="checkout-line"><span>Received</span><span>${fmt(order.amountReceived)}</span></div>`
+          : ''}
     </div>
   `;
 

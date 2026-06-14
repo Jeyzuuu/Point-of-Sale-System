@@ -632,10 +632,15 @@
             <span>Amount to receive:</span>
             <strong id="ewallet-total-display"></strong>
           </div>
+          <label style="margin-top:0.75rem;display:block">Amount Received (optional)</label>
+          <input type="number" id="ewallet-amount-received" class="input-full" placeholder="0.00" min="0" step="0.01">
+          <p class="ewallet-hint">Enter the amount shown on the customer's payment confirmation for your records.</p>
         </div>
         <div id="card-wrap" class="card-section hidden">
           <label>Card Last 4 Digits (optional)</label>
           <input type="text" id="card-last4" class="input-full" placeholder="e.g. 1234" maxlength="4" inputmode="numeric">
+          <label style="margin-top:0.75rem;display:block">Amount Charged (optional)</label>
+          <input type="number" id="card-amount-received" class="input-full" placeholder="0.00" min="0" step="0.01">
           <p class="ewallet-hint">Process the card payment on your terminal, then click Complete Sale.</p>
         </div>
         <div id="split-payment-wrap" class="split-payment hidden">
