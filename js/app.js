@@ -2488,7 +2488,16 @@ const LocalDashboardSync = (() => {
   try {
     // Always start on login screen — never auto-resume a session
     Store.clearSession();
-    await seedDefaultData();
+
+    // Load data from filesystem (data/database.json via PHP)
+    // This is the primary store — more reliable than localStorage
+    const fileDataFound = await Store.loadFromFile();
+
+    // Only seed default users/products if no file data exists (true first run)
+    if (!fileDataFound) {
+      await seedDefaultData();
+    }
+
     await initAuth();
     updateHeldBadge();
     checkLowStockAlerts();
