@@ -2486,6 +2486,14 @@ const LocalDashboardSync = (() => {
 
 (async function init() {
   try {
+    // Guard: make sure store.js loaded correctly
+    if (typeof Store === 'undefined') {
+      throw new Error('store.js failed to load. Make sure store.js exists in the js/ folder and nginx can serve it.');
+    }
+    if (typeof Store.loadFromFile === 'undefined') {
+      throw new Error('store.js is outdated — it is missing loadFromFile(). Please copy the new store.js to the server.');
+    }
+
     // Always start on login screen — never auto-resume a session
     Store.clearSession();
 

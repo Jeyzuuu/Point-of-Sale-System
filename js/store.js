@@ -42,19 +42,11 @@ const Store = (() => {
     retailLabel:       'Retail',
     wholesaleLabel:    'Wholesale',
     wholesaleDiscount: 15,
-<<<<<<< Updated upstream
-    autoLockEnabled: true,
-    autoLockMinutes: 5,
-    cloudSyncEnabled: false,
-    cloudSyncUrl: '',
-    cloudSyncStoreName: '',
-=======
     autoLockEnabled:   true,
     autoLockMinutes:   5,
     cloudSyncEnabled:  false,
     cloudSyncUrl:      '',
     cloudSyncStoreName:'',
->>>>>>> Stashed changes
   };
 
   /* ---- localStorage helpers (fast in-session access) ---- */
